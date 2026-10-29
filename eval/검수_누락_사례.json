@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-29T07:51:12+00:00",
+  "purpose": "실사용을 가정한 원래 출력과 검수 누락을 보존하고 후속 평가에서 재현할 사례를 확보한다.",
+  "baseline_commit": "f06c7c21d23c5819e60a98f79a082e19076829f8",
+  "publication": {
+    "run_id": "20261029T063221Z-b5c1-proofread",
+    "sha256": "48b7845c07b5630e1ea53993945f9f7218a219d040650a6c5dfae1418a2bbbdd",
+    "message_id": "1565264778606415938",
+    "message_timestamp": "2026-10-29T07:23:24.433000+00:00"
+  },
+  "preservation_policy": {
+    "workflow_changed": false,
+    "prompts_or_rules_changed": false,
+    "published_output_edited": false,
+    "historical_evaluation_files_changed": false,
+    "discord_edit_or_resend": false,
+    "additional_model_requests": 0
+  },
+  "assessment_scope": "저장된 원문 대조로 확인한 에이전트 측 지적이다. 사람이 독립적으로 확정한 정답 라벨이나 외부 세계의 사실 검증은 아니다. 향후 평가 때 기대 판정을 별도로 확인한다.",
+  "control_caveat": "기존 정상 대조는 원래 검사를 통과한 초안이지, 독립적으로 정확성을 확정한 정답이 아니었다. 합·불합의 자기 일관성과 사실의 정확성을 혼동하지 않는다.",
+  "case_count": 2,
+  "cases": [
+    {
+      "case_id": "missed-review-4c3e256a37",
+      "issue_type": "comparison_target_ambiguity",
+      "article_id": "4c3e256a37",
+      "title": "GEPA-Curator: 에이전트 학습 개선",
+      "source_url": "https://arxiv.org/abs/2610.37651v1",
+      "published_output": {
+        "headline": "GEPA-Curator: 에이전트 학습 개선",
+        "summary": "GEPA-Curator는 에이전트의 경험을 선별하여 프롬프트 최적화를 개선하는 프레임워크입니다. 이 시스템은 신뢰할 수 없는 학습 신호를 제공할 가능성이 있는 작업을 필터링하고, 과거의 성공적인 경로를 선택적으로 검색하여 추가 컨텍스트를 제공합니다. 평가 결과, GEPA-Curator는 Gemini 3.1 Pro와 Claude Opus 5를 사용하여 기존 모델의 평균 성능을 일치시키거나 초과했습니다.",
+        "why": "GEPA-Curator는 LLM의 프롬프트 최적화 과정에서 에이전트의 경험을 효과적으로 관리하여 성능을 개선할 수 있는 방법을 제시합니다."
+      },
+      "passing_attempt": 1,
+      "original_verdict": {
+        "article_id": "4c3e256a37",
+        "attempt": 1,
+        "ok": true,
+        "rule_problems": [],
+        "number_flags": [],
+        "judge_ok": true,
+        "problems": [],
+        "error": null,
+        "retryable": true
+      },
+      "source_body_sha256": "fa9e1b8ffea89a9378403c6944c91a9817548f05eb101a13912da3e690fbead3",
+      "source_excerpts": [
+        "We evaluate GEPA-Curator on GoBrowse, ALFWorld, AppWorld, and $τ$-bench, using both Gemini 3.1 Pro and Claude Opus 5 as optimizer models. GEPA-Curator matches or exceeds the mean performance of both baselines, with gains of up to 20.7% over GEPA and 21.2% over ACE."
+      ],
+      "source_excerpt_word_count": 43,
+      "finding": "요약은 비교 대상을 기존 모델로 표현했다. 원문에서 Gemini 3.1 Pro와 Claude Opus 5는 최적화에 사용한 모델이고, 성능 비교 기준은 GEPA와 ACE라는 방법이다.",
+      "severity_description": "비교 대상 지칭의 부정확성·오해 소지",
+      "future_expected_action": "flag_for_review",
+      "future_checks": [
+        "최적화에 사용한 모델과 성능 비교 기준을 구별하는가",
+        "비교 방법의 성능을 기존 LLM 자체의 성능과 혼동하게 표현했는가"
+      ],
+      "replayed_after_recording": false
+    },
+    {
+      "case_id": "missed-review-ff13d1a547",
+      "issue_type": "availability_scope_omission",
+      "article_id": "ff13d1a547",
+      "title": "구글, 안드로이드 개발 환경 개방",
+      "source_url": "https://the-decoder.com/google-opens-android-development-to-third-party-ai-agents-and-unveils-new-gemini-apis/",
+      "published_output": {
+        "headline": "구글, 안드로이드 개발 환경 개방",
+        "summary": "구글은 안드로이드 스튜디오를 40개 이상의 외부 AI 에이전트와 통합하여 개발자들이 다양한 도구를 사용할 수 있도록 했다. 새로운 Gemini API를 통해 개발자들은 모바일 기기에서 에이전트 기능을 로컬로 실행할 수 있으며, 앱 서비스를 구글 검색과 Gemini 앱에 직접 연결할 수 있다. 또한, XREAL과 협력하여 안드로이드 XR을 실행하는 스마트 안경 XREAL AURA를 공개했다.",
+        "why": "이 소식은 개발자가 다양한 AI 도구를 활용하여 효율적으로 앱을 개발할 수 있는 기회를 제공하므로 중요하다."
+      },
+      "passing_attempt": 0,
+      "original_verdict": {
+        "article_id": "ff13d1a547",
+        "attempt": 0,
+        "ok": true,
+        "rule_problems": [],
+        "number_flags": [],
+        "judge_ok": true,
+        "problems": [],
+        "error": null,
+        "retryable": true
+      },
+      "source_body_sha256": "4003ed53e76fccc13f4edfa9f6a0510ec764330d5f3962f5ce161e5f22c6072a",
+      "source_excerpts": [
+        "Google is adding an alpha Agentic API powered by Gemini Nano 4 to its ML Kit.",
+        "the company is launching a preview of the Connected Apps Platform.",
+        "Developers can link their apps via Android MCP or cloud-hosted MCP servers and manage them through a single console.",
+        "they will roll out to web search in the coming weeks."
+      ],
+      "source_excerpt_word_count": 57,
+      "finding": "요약은 로컬 Agentic API와 별도 앱 연결 플랫폼을 새로운 Gemini API로 묶어 설명하고 알파·프리뷰 단계와 웹 검색 순차 제공 조건을 생략했다. 정식 제공 완료를 명시한 허위 주장으로 단정하지 않고 제공 범위 오해 사례로 보존한다.",
+      "severity_description": "제공 경로·공개 단계의 모호성",
+      "future_expected_action": "flag_for_review",
+      "future_checks": [
+        "로컬 실행 API와 앱 연결 플랫폼의 역할을 구별하는가",
+        "알파·프리뷰 및 향후 제공 조건을 생략해 즉시 정식 사용 가능한 것으로 오해하게 하는가"
+      ],
+      "replayed_after_recording": false
+    }
+  ],
+  "request_budget_at_recording": {
+    "limit": 65,
+    "used": 64,
+    "remaining": 1
+  },
+  "preserved_artifact_sha256": {
+    ".env.example": "2daec42943d8ae78014066ee2341a6d40510e59528d7d96fb85ae74e585d5600",
+    ".gitignore": "8c68a980416f532b741a6c958621b87392b85d1ce69ea40608e9ab043b190383",
+    "REPORT.md": "8020b822890adc0b978bc78416477050cae21e177a4dcc58b446f95ec198c9c1",
+    "audience.yaml": "1e6040202190e144a26bdc9d235f768920e2f96eba03b55ef7e910ea6f8d993c",
+    "collectors.py": "5933c35bfcaf7fa5be8aca4cd27f179210050b8a86f908bae6885570d911b5e1",
+    "config.py": "0bd395edc3bb5925b6c17fb19f4f96ee1554a94624b6df4ffe4e9f7683623207",
+    "config.yaml": "bca3061ba6f19754f77c824d9173d28baccab3d8f32ad5bcb9ce1154b66c9b10",
+    "eval/candidates.json": "81f0afe5a9cda4e3fc2d7af6f19ad3b966335cc26c8fe694b312cebdf5d3ffe8",
+    "eval/labels.json": "468c7bd774ed2fe16a35e3d3da31d06a76d698fdd5053069d1939752902f087a",
+    "eval/negative_control.json": "b06a19f3d34f58cb9c21646b965c6a9172fd053a15f4c040593301d4ed09489b",
+    "eval/selection_eval.json": "87225c6d8c5833bb22fe9737358a5f996313d5c2b7ada1f539a3cc706404712e",
+    "eval/검수_프롬프트_비교.json": "6a5635dce7e12b7851114e4cd07fdb53e4b0b30f684d8aab599a8c0f03889fa3",
+    "eval/초안_형식_보완.json": "861ac0312968dc1c92434d090817acfe753ee88d4906849f39d143c69922636f",
+    "graph.py": "a1c6a2fcc405ac918deba0e810506a25c1c3babb575cd4ba3d277729314c7de2",
+    "llm.py": "e231e8e254e9c5b825eb9a13e48328f647449f999d05ced22465555551ced894",
+    "metrics.py": "d9113c1535bf76f97add9a88cbb2f26bc06feb63ce980917f0d78d410232ee2f",
+    "net.py": "2130e5c77870ee336ee619c17944fb71341837b40378cec1716c027d258847c9",
+    "publisher.py": "7ff81a57b3d8ee34bc17412003b12c0c4ead9dcb352657a7c0d165efd51d669d",
+    "requirements.txt": "2f64478426f2901676ca71c4a2a276b8fb2c0846116e4b8b9c64e9b0bf1c3520",
+    "run.py": "2049062df61d72d29c7c442e68d70ced440318404200518c2b720dfcc832148a",
+    "store/cache/20261029T063221Z-b5c1-proofread.json": "dcfb4930030ea3aec13e2e43e40bff76d5d022bd8e2e2614661edd9b83062bb3",
+    "store/cache/publications/20261029T063221Z-b5c1-proofread.claim.json": "a24e98a56d91843e05b216dc2eecafa9f50bb3352eef099e7664c71fe6525d97",
+    "store/cache/publications/20261029T063221Z-b5c1-proofread.json": "aeb795de9424d614f422c8029a8e040f09733981881fa90106008df3ae3c9139",
+    "store/cache/publications/20261029T063221Z-b5c1-proofread.receipt.json": "c6a16969e4004d03f76ffdf3c70b89ccbfdee34dd8c54dc263d1e795a3516cf4",
+    "store/graph_mermaid.txt": "8f10c1e6a88204ee8cdefad4e53832696bacd8c32f3095f3305a17646c4636b1",
+    "store/metrics.jsonl": "9551cae15830e4df21fc161b50fc2bf6344dc2eb48bcac0968fdc4a7a12f5980",
+    "store/source_survey.json": "4a9831842fc2d922a77f5bab0039bf30960c91e634c13c080950306222db3dcf",
+    "store/source_survey_table.md": "8a6c48c875271aeca4df1e01b61a675d2163f36b15df9ef638b1dd52c00e047d",
+    "store/발행_확인.json": "4c1688f579891f82f47105a9675676cd2810c704d6e1607ce0e24678586b9c4b",
+    "store/연결확인.json": "eb6f541f0f3cdbff5e5a9bfa63bf40acade0a35e2b58328c97dca1a36156770d",
+    "tests/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tests/support.py": "bfc9055d4c40c9eb1c14cd0883f7b15c926289e29f52462d3b842e61e15aa479",
+    "tests/test_pipeline.py": "c90bd9c0670f03e246c34e67774e06966980b4004c1a31e000ba0475007481f9",
+    "tests/test_rules.py": "6ec69d721c94c3c1470df7540515c68a64bbce88d36d1d59be62250fed32e8d7",
+    "tests/test_tools.py": "c63f7a4e0f45af99e9d88120fcecad514ff575981d07e12ebb3864e8eed6a24b",
+    "tests/테스트_검수기준.py": "15aba936c590027ed0386eea8f724eb16185369044eb551a7d3bb8dd9e06e3a8",
+    "tests/테스트_명령통합.py": "728fb3b04e8ce9539f7ca752942eb7863c4afd427933bf0173e35cff620b07db",
+    "tests/테스트_발행승인.py": "ce6fc13829c7b5b8d14c1180f102bea6ef69642b8ef70ee1664803ef5f1feb01",
+    "tests/테스트_실행승인.py": "245628064dc891c5d2d5fb71c25f0c171e97168e0ea5aa40e2761f9b4a9f1c5d",
+    "tests/테스트_연결확인.py": "3b0661e16b4ecdeebc9ccbe5df06485f71ae40fc30c408d733ec2ae573ad123a",
+    "tests/테스트_호출예산.py": "1942b1155329a5a1eedb0e001f4cd5ec07bdc27e33193049367ecad660898942",
+    "tools/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tools/candidates.yaml": "7742ce08dc74c15cb74af803005b8584d28e541b3cd20e30a2e9f7b7b556b09a",
+    "tools/eval_selection.py": "a17f047c6da15f19c5f396c7fc81dc913f4ef63f017a5e7251d90241e3b65346",
+    "tools/label_receiver.py": "37ce752b037952298bd2e8f87595a25e7b6c0e1e4c415fa82620e817645b3123",
+    "tools/make_label_widget.py": "4a61a905e33e648268713634dc8e521a534b30d6b1ca45173525471ea756ba55",
+    "tools/negative_control.py": "28d746192271dadaee1a7a2d5971325bb92ea15a3b63b7df6b891716db576ced",
+    "tools/render_survey_table.py": "36978f0ede84d5164bdf65f7850b1c27a2d9fb3c09a4a19e5580bee378d01067",
+    "tools/snapshot_candidates.py": "f3ee7cca4a6cb523582863a0ba045483c974ccb0ad1311eb6efe36ff5b88d283",
+    "tools/survey_decisions.yaml": "9e13c8c73269b8997fb535367209e053b2572f8c4855335745801b3aecdc386a",
+    "tools/survey_sources.py": "3a63f61dfc6801afc395cc7a630e4b5cd449318160401fc4db295e54f924a275",
+    "tools/연결확인.py": "493681d31b359d8bd826f6f0774cbd99dbdb56c06245ea9e5ef4f1c008e8f37c",
+    "발행승인.py": "20bea3a4a1b3346006f6c048fd4c806e8090844c4ec76c7c94bfbe1176110a61",
+    "호출예산.py": "ba8df6612bfa34865be10089d348395e0dd23cc661ed3c754c3ddceafecd5c0b"
+  }
+}
