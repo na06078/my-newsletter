@@ -1,0 +1,40 @@
+{
+  "run_id": "20261029T063221Z-b5c1-proofread",
+  "sha256": "48b7845c07b5630e1ea53993945f9f7218a219d040650a6c5dfae1418a2bbbdd",
+  "message_id": "1565264778606415938",
+  "send_http_status": 200,
+  "readback_http_status": 200,
+  "message_timestamp": "2026-10-29T07:23:24.433000+00:00",
+  "checked_at_utc": "2026-10-29T07:27:04+00:00",
+  "verified": true,
+  "embeds": 4,
+  "articles": 3,
+  "checks": {
+    "message_id": true,
+    "embed_count": true,
+    "username": true,
+    "0_title": true,
+    "0_description": true,
+    "0_color": true,
+    "1_title": true,
+    "1_description": true,
+    "1_url": true,
+    "1_color": true,
+    "1_footer": true,
+    "2_title": true,
+    "2_description": true,
+    "2_url": true,
+    "2_color": true,
+    "2_footer": true,
+    "3_title": true,
+    "3_description": true,
+    "3_url": true,
+    "3_color": true,
+    "3_footer": true
+  },
+  "request_budget": {
+    "limit": 65,
+    "used": 64,
+    "remaining": 1
+  }
+}
