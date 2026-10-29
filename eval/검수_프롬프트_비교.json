@@ -1,0 +1,58 @@
+{
+  "run_id": "review-probe-20261029T062927Z",
+  "source_run_id": "20261029T061758Z-ce20",
+  "article_id": "f6569f9835",
+  "source_sha256": "f6f633039bb4591385c364ca1ad392bb943cb6ee7ed09f2726b4aafab35f5661",
+  "prompt_sha256": "643825d34e039b8420967c0732066a958e6e5f7b0f54e11a97e67318c69eeefc",
+  "budget_before": {
+    "limit": 65,
+    "used": 34,
+    "remaining": 31
+  },
+  "budget_after": {
+    "limit": 65,
+    "used": 36,
+    "remaining": 29
+  },
+  "rows": [
+    {
+      "kind": "control",
+      "summary": "구글 딥마인드는 Gemini 4 Argon 출시 2주 만에 Gemini 4 Carbon을 발표했습니다. Carbon은 인공지능 지수에서 59점을 기록하며 Argon의 50점을 초과했습니다. 이 모델은 다중 일자 코딩 작업을 위해 설계되었으며, 보안 전문가에게 우선 제공됩니다.",
+      "verdict": {
+        "article_id": "f6569f9835",
+        "attempt": 0,
+        "ok": true,
+        "rule_problems": [],
+        "number_flags": [],
+        "judge_ok": true,
+        "problems": [],
+        "error": null,
+        "retryable": true
+      }
+    },
+    {
+      "kind": "number",
+      "summary": "구글 딥마인드는 Gemini 44 Argon 출시 2주 만에 Gemini 4 Carbon을 발표했습니다. Carbon은 인공지능 지수에서 59점을 기록하며 Argon의 50점을 초과했습니다. 이 모델은 다중 일자 코딩 작업을 위해 설계되었으며, 보안 전문가에게 우선 제공됩니다.",
+      "verdict": {
+        "article_id": "f6569f9835",
+        "attempt": 0,
+        "ok": false,
+        "rule_problems": [],
+        "number_flags": [
+          "44"
+        ],
+        "judge_ok": false,
+        "problems": [
+          {
+            "claim": "Gemini 44 Argon 출시 2주 만에 Gemini 4 Carbon을 발표했습니다.",
+            "kind": "number_mismatch",
+            "note": "원문에서는 'Gemini 4 Argon'이라고 명시되어 있으나, 초안에서는 'Gemini 44 Argon'으로 잘못 표기됨."
+          }
+        ],
+        "error": null,
+        "retryable": true
+      }
+    }
+  ],
+  "caveat": "첫 실패 표본의 재검수이며 일반화 성능 검증이 아니다. 정상 통과와 의도한 오류 적발을 각각 확인한다."
+}

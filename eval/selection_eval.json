@@ -1,0 +1,458 @@
+{
+  "evaluated_at_kst": "2026-10-29T15:23:10+09:00",
+  "run_id": "eval-select-20261029T062239Z",
+  "items": 30,
+  "label_counts": {
+    "중요": 19,
+    "보통": 8,
+    "무관": 3
+  },
+  "importance": "AI 에이전트·LLM을 만들거나 쓰는 개발자에게 직접 관련된 소식이면 중요하다. 새 모델 공개, 에이전트·코딩 에이전트 설계와 실사용 후기, 로컬 실행, LLM 평가·메모리 같은 연구처럼 내 실습에 참고할 수 있는 것.",
+  "audience_status": "importance 는 사용자 선택(Hermes 가 라벨 30건에서 만든 후보 3개 중 2026-10-29 선택). persona·exclude·tone 은 Hermes 임시 초안",
+  "llm_calls": 9,
+  "summary": {
+    "precision": 0.867,
+    "max_precision": 1.0,
+    "random_baseline": 0.633,
+    "mean_label_picked": 1.867,
+    "mean_label_pool": 1.533,
+    "irrelevant_picked": 0,
+    "survivor_recall": 0.439,
+    "pick_overlap_all_runs": 1
+  },
+  "runs": [
+    {
+      "n_picked": 5,
+      "precision": 0.8,
+      "max_precision": 1.0,
+      "random_baseline": 0.633,
+      "mean_label_picked": 1.8,
+      "mean_label_pool": 1.533,
+      "irrelevant_picked": 0,
+      "survivor_recall": 0.421,
+      "picked": [
+        {
+          "id": "beb92a3cbb",
+          "title": "How Anthropic ships the #1 LLM in the World safely: Separating the Bra",
+          "label": "보통",
+          "score": 9,
+          "reason": "This article provides insights into the engineering behind a leading LLM, which is crucial for understanding how to build and deploy effective AI agents."
+        },
+        {
+          "id": "02dc914e72",
+          "title": "Your Policy Is Secretly a Harness: The Decision Geometry of Agent Inte",
+          "label": "중요",
+          "score": 8,
+          "reason": "The research discusses the decision-making processes of language model agents, which is directly relevant for developing and optimizing agent workflows."
+        },
+        {
+          "id": "da361ea047",
+          "title": "Rare, Relevant, and Still Wrong: How Memory Fails LLM Group Decisions",
+          "label": "중요",
+          "score": 8,
+          "reason": "This study addresses memory management in LLM group decisions, which is vital for improving the performance of AI agents in collaborative tasks."
+        },
+        {
+          "id": "ff13d1a547",
+          "title": "Google opens Android development to third-party AI agents and unveils ",
+          "label": "중요",
+          "score": 7,
+          "reason": "Opening Android development to third-party AI agents could lead to new tools and integrations that enhance local LLM capabilities."
+        },
+        {
+          "id": "f6569f9835",
+          "title": "Google Deepmind releases Gemini 4 Carbon just two weeks after Argon wi",
+          "label": "중요",
+          "score": 6,
+          "reason": "The release of a new model with significant improvements could provide benchmarks for evaluating local LLM performance."
+        }
+      ],
+      "important_outcomes": [
+        {
+          "id": "7ae8eb2055",
+          "title": "NVIDIA Nemotron 3.5 Transcribe and Granary v2: Intelligent Multilingua",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "bf73190b32",
+          "title": "Show HN: Coding agent spots your AI practices and the ones you're miss",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "42f75cb63e",
+          "title": "Google Deepmind's Genie 4 puts a modern spin on agent designs that pre",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "44a48017b0",
+          "title": "Show HN: Markdown is 40× more token-efficient with SQLite",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "625efce571",
+          "title": "[AINews] Anthropic ends Coding Interviews: \"Hunger beats tenure\"",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "d631652614",
+          "title": "The October inflection point for vibe game development",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "55200b4d31",
+          "title": "Show HN: Rocus: Browser local LLM that organizes your websites, notes ",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "78b2af19a1",
+          "title": "EnvSched: Environment-Aware Scheduling for Rollout-Efficient Agent Rei",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "6dd70bb9a7",
+          "title": "Coding From the Himalayas With an Offline AI Agent",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "f7415c8abb",
+          "title": "Does the code compile? Five local models on a DGX Spark, five runs eac",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "52ced88a57",
+          "title": "Quoting Ted Sanders",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "83480dba54",
+          "title": "Nvidia's open Nemotron 3.5 Transcribe combines transcription, translat",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "da361ea047",
+          "title": "Rare, Relevant, and Still Wrong: How Memory Fails LLM Group Decisions",
+          "outcome": "picked"
+        },
+        {
+          "id": "ff13d1a547",
+          "title": "Google opens Android development to third-party AI agents and unveils ",
+          "outcome": "picked"
+        },
+        {
+          "id": "02dc914e72",
+          "title": "Your Policy Is Secretly a Harness: The Decision Geometry of Agent Inte",
+          "outcome": "picked"
+        },
+        {
+          "id": "a0b7070066",
+          "title": "Can LLMs Uncover Hidden Physical Laws through Free Exploration?",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "34370e88c8",
+          "title": "Can we trust LLMs to judge whether a research idea is novel?",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "d957b57aa1",
+          "title": "Quoting Terk Terkowitz",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "f6569f9835",
+          "title": "Google Deepmind releases Gemini 4 Carbon just two weeks after Argon wi",
+          "outcome": "picked"
+        }
+      ]
+    },
+    {
+      "n_picked": 5,
+      "precision": 0.8,
+      "max_precision": 1.0,
+      "random_baseline": 0.633,
+      "mean_label_picked": 1.8,
+      "mean_label_pool": 1.533,
+      "irrelevant_picked": 0,
+      "survivor_recall": 0.421,
+      "picked": [
+        {
+          "id": "6dd70bb9a7",
+          "title": "Coding From the Himalayas With an Offline AI Agent",
+          "label": "중요",
+          "score": 9,
+          "reason": "This article provides practical guidance on setting up and running an offline coding agent, which is directly relevant for hands-on experimentation with LLMs."
+        },
+        {
+          "id": "78b2af19a1",
+          "title": "EnvSched: Environment-Aware Scheduling for Rollout-Efficient Agent Rei",
+          "label": "중요",
+          "score": 8,
+          "reason": "The research on environment-aware scheduling for agent reinforcement learning could enhance the efficiency of developing and deploying language agents."
+        },
+        {
+          "id": "da361ea047",
+          "title": "Rare, Relevant, and Still Wrong: How Memory Fails LLM Group Decisions",
+          "label": "중요",
+          "score": 8,
+          "reason": "Understanding how memory impacts decision-making in LLM groups is crucial for optimizing agent performance and reliability."
+        },
+        {
+          "id": "beb92a3cbb",
+          "title": "How Anthropic ships the #1 LLM in the World safely: Separating the Bra",
+          "label": "보통",
+          "score": 7,
+          "reason": "Insights into the engineering behind a leading LLM can inform best practices for developing and deploying your own agents."
+        },
+        {
+          "id": "42f75cb63e",
+          "title": "Google Deepmind's Genie 4 puts a modern spin on agent designs that pre",
+          "label": "중요",
+          "score": 6,
+          "reason": "The introduction of a new real-time world model by Google Deepmind could inspire new approaches to agent design and interaction."
+        }
+      ],
+      "important_outcomes": [
+        {
+          "id": "7ae8eb2055",
+          "title": "NVIDIA Nemotron 3.5 Transcribe and Granary v2: Intelligent Multilingua",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "bf73190b32",
+          "title": "Show HN: Coding agent spots your AI practices and the ones you're miss",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "42f75cb63e",
+          "title": "Google Deepmind's Genie 4 puts a modern spin on agent designs that pre",
+          "outcome": "picked"
+        },
+        {
+          "id": "44a48017b0",
+          "title": "Show HN: Markdown is 40× more token-efficient with SQLite",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "625efce571",
+          "title": "[AINews] Anthropic ends Coding Interviews: \"Hunger beats tenure\"",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "d631652614",
+          "title": "The October inflection point for vibe game development",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "55200b4d31",
+          "title": "Show HN: Rocus: Browser local LLM that organizes your websites, notes ",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "78b2af19a1",
+          "title": "EnvSched: Environment-Aware Scheduling for Rollout-Efficient Agent Rei",
+          "outcome": "picked"
+        },
+        {
+          "id": "6dd70bb9a7",
+          "title": "Coding From the Himalayas With an Offline AI Agent",
+          "outcome": "picked"
+        },
+        {
+          "id": "f7415c8abb",
+          "title": "Does the code compile? Five local models on a DGX Spark, five runs eac",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "52ced88a57",
+          "title": "Quoting Ted Sanders",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "83480dba54",
+          "title": "Nvidia's open Nemotron 3.5 Transcribe combines transcription, translat",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "da361ea047",
+          "title": "Rare, Relevant, and Still Wrong: How Memory Fails LLM Group Decisions",
+          "outcome": "picked"
+        },
+        {
+          "id": "ff13d1a547",
+          "title": "Google opens Android development to third-party AI agents and unveils ",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "02dc914e72",
+          "title": "Your Policy Is Secretly a Harness: The Decision Geometry of Agent Inte",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "a0b7070066",
+          "title": "Can LLMs Uncover Hidden Physical Laws through Free Exploration?",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "34370e88c8",
+          "title": "Can we trust LLMs to judge whether a research idea is novel?",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "d957b57aa1",
+          "title": "Quoting Terk Terkowitz",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "f6569f9835",
+          "title": "Google Deepmind releases Gemini 4 Carbon just two weeks after Argon wi",
+          "outcome": "survivor_not_picked"
+        }
+      ]
+    },
+    {
+      "n_picked": 5,
+      "precision": 1.0,
+      "max_precision": 1.0,
+      "random_baseline": 0.633,
+      "mean_label_picked": 2,
+      "mean_label_pool": 1.533,
+      "irrelevant_picked": 0,
+      "survivor_recall": 0.474,
+      "picked": [
+        {
+          "id": "6dd70bb9a7",
+          "title": "Coding From the Himalayas With an Offline AI Agent",
+          "label": "중요",
+          "score": 9,
+          "reason": "This article provides practical guidance on setting up an offline coding agent, which is directly relevant for developers looking to implement local LLMs."
+        },
+        {
+          "id": "ff13d1a547",
+          "title": "Google opens Android development to third-party AI agents and unveils ",
+          "label": "중요",
+          "score": 8,
+          "reason": "Google's opening of Android development to third-party AI agents is significant for developers wanting to integrate AI into mobile applications."
+        },
+        {
+          "id": "02dc914e72",
+          "title": "Your Policy Is Secretly a Harness: The Decision Geometry of Agent Inte",
+          "label": "중요",
+          "score": 7,
+          "reason": "Understanding the decision geometry of agent interfaces can help developers design better prompts and control logic for their LLMs."
+        },
+        {
+          "id": "da361ea047",
+          "title": "Rare, Relevant, and Still Wrong: How Memory Fails LLM Group Decisions",
+          "label": "중요",
+          "score": 7,
+          "reason": "Insights into how memory affects LLM group decisions can inform developers on optimizing memory usage in their applications."
+        },
+        {
+          "id": "83480dba54",
+          "title": "Nvidia's open Nemotron 3.5 Transcribe combines transcription, translat",
+          "label": "중요",
+          "score": 6,
+          "reason": "Nvidia's new model combines multiple functionalities, which could be useful for developers looking for versatile AI tools."
+        }
+      ],
+      "important_outcomes": [
+        {
+          "id": "7ae8eb2055",
+          "title": "NVIDIA Nemotron 3.5 Transcribe and Granary v2: Intelligent Multilingua",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "bf73190b32",
+          "title": "Show HN: Coding agent spots your AI practices and the ones you're miss",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "42f75cb63e",
+          "title": "Google Deepmind's Genie 4 puts a modern spin on agent designs that pre",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "44a48017b0",
+          "title": "Show HN: Markdown is 40× more token-efficient with SQLite",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "625efce571",
+          "title": "[AINews] Anthropic ends Coding Interviews: \"Hunger beats tenure\"",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "d631652614",
+          "title": "The October inflection point for vibe game development",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "55200b4d31",
+          "title": "Show HN: Rocus: Browser local LLM that organizes your websites, notes ",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "78b2af19a1",
+          "title": "EnvSched: Environment-Aware Scheduling for Rollout-Efficient Agent Rei",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "6dd70bb9a7",
+          "title": "Coding From the Himalayas With an Offline AI Agent",
+          "outcome": "picked"
+        },
+        {
+          "id": "f7415c8abb",
+          "title": "Does the code compile? Five local models on a DGX Spark, five runs eac",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "52ced88a57",
+          "title": "Quoting Ted Sanders",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "83480dba54",
+          "title": "Nvidia's open Nemotron 3.5 Transcribe combines transcription, translat",
+          "outcome": "picked"
+        },
+        {
+          "id": "da361ea047",
+          "title": "Rare, Relevant, and Still Wrong: How Memory Fails LLM Group Decisions",
+          "outcome": "picked"
+        },
+        {
+          "id": "ff13d1a547",
+          "title": "Google opens Android development to third-party AI agents and unveils ",
+          "outcome": "picked"
+        },
+        {
+          "id": "02dc914e72",
+          "title": "Your Policy Is Secretly a Harness: The Decision Geometry of Agent Inte",
+          "outcome": "picked"
+        },
+        {
+          "id": "a0b7070066",
+          "title": "Can LLMs Uncover Hidden Physical Laws through Free Exploration?",
+          "outcome": "survivor_not_picked"
+        },
+        {
+          "id": "34370e88c8",
+          "title": "Can we trust LLMs to judge whether a research idea is novel?",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "d957b57aa1",
+          "title": "Quoting Terk Terkowitz",
+          "outcome": "dropped_at_prelim"
+        },
+        {
+          "id": "f6569f9835",
+          "title": "Google Deepmind releases Gemini 4 Carbon just two weeks after Argon wi",
+          "outcome": "survivor_not_picked"
+        }
+      ]
+    }
+  ],
+  "caveat": "표본 30건의 동작 확인이며 통계적 입증이 아니다. 같은 표본에서 기준을 고쳤다면 그 표본에 맞춰진 결과다."
+}

@@ -1,0 +1,43 @@
+{
+  "run_id": "20261029T063221Z-b5c1-proofread",
+  "source_run_id": "20261029T063221Z-b5c1",
+  "rule_detection": [
+    "summary 에 제어문자(탭 등)가 있음. 일반 문장으로 다시 작성할 것"
+  ],
+  "new_draft": {
+    "article_id": "fa8295575a",
+    "attempt": 1,
+    "headline": "LLM 에이전트 평가 예산 배분",
+    "summary": "LLM 기반 에이전트의 진화는 후보 생성과 평가를 통해 에이전트 워크플로를 개선합니다. 평가 예산을 두 가지 역할에 어떻게 배분할지에 대한 연구 결과, 희소한 피드백이 생산적인 진화를 유지할 수 있으며, 추가적인 목표 평가가 최종 선택을 개선하는 것으로 나타났습니다. 제안한 방법은 희소한 검색 시간 피드백과 목표 최종 확인을 결합하여 평가 효율성을 높입니다.",
+    "why": "이 연구는 LLM 기반 에이전트의 평가 효율성을 높이는 방법을 제시하여 개발자가 에이전트 워크플로를 최적화하는 데 도움을 줄 수 있습니다.",
+    "body_source": "inline"
+  },
+  "verdict": {
+    "article_id": "fa8295575a",
+    "attempt": 1,
+    "ok": true,
+    "rule_problems": [],
+    "number_flags": [],
+    "judge_ok": true,
+    "problems": [],
+    "error": null,
+    "retryable": true
+  },
+  "counts": {
+    "collected": 47,
+    "picked": 4,
+    "shortlisted": 15,
+    "verified": 3
+  },
+  "sha256": "48b7845c07b5630e1ea53993945f9f7218a219d040650a6c5dfae1418a2bbbdd",
+  "budget_before": {
+    "limit": 65,
+    "used": 48,
+    "remaining": 17
+  },
+  "budget_after": {
+    "limit": 65,
+    "used": 50,
+    "remaining": 15
+  }
+}
