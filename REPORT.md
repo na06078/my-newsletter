@@ -139,7 +139,19 @@ graph TD;
 
 ## 5. 실행 기록
 
-**[작성 대기]** 최종 검수를 거쳐 정상 발행된 결과 화면 캡처, `store/metrics.jsonl` 요약(수집 건수·선별 건수·검수 통과 건수·발행 응답), 검수 시험(오염 샘플) 적발 수치를 여기에 넣는다. 현재까지 실제 모델 호출과 Discord 발송은 한 번도 하지 않았다.
+### 연결·안전 보완 확인 (2026-10-29)
+
+| 확인 | 실제 결과 | 근거 |
+|---|---|---|
+| OpenAI 구조화 응답 | 성공 1회. 요청 모델 `gpt-4o-mini`, 실제 응답 모델 `gpt-4o-mini-2024-07-18` | `store/연결확인.json`, `store/metrics.jsonl` |
+| 실제 요청 장부 | 사용 1회 / 상한 65회. 실패·재시도도 예약하고 재시작 시 누적 유지 | `호출예산.py`, 로컬 전용 SQLite 장부 |
+| 오프라인 검사 | 기존 분기 시험과 예산·발행 승인·CLI·연결 검사 합계 68건 통과 | `tests/`의 명시적 7개 모듈 실행 |
+| 실제 전체 뉴스 실행·선별 평가·검수 시험 | 아직 미실행 | 다음 단계 |
+| 실제 Discord 전송 | 0회. 최종 내용 확인 후 별도 승인 필요 | 준비본 전송 경계 |
+
+현재 발행은 **준비 → 내용·해시 확인 → 저장한 동일 payload 전송 → 메시지 재조회**로 분리했다. 이전 `--publish`의 자동 재생성·즉시 전송은 차단했다. 승인 해시 불일치·변조·중복 전송은 전송하지 않고, 결과 불명도 자동 재발송하지 않는다. 모델의 논리적 호출 기록과 실제 HTTP 시도 횟수는 구별한다.
+
+**[작성 대기]** 전체 실행의 수집·선별·검수·제외 건수, 오염 샘플 적발·오탐 수치, 최종 발송·재조회 기록과 Discord 화면 캡처를 추가한다. 연결 1회 성공은 전체 파이프라인이나 모델 판단 품질의 성공을 뜻하지 않는다.
 
 ## 6. 프로젝트 회고
 
@@ -154,8 +166,9 @@ python -m venv .venv                 # Python 3.12 에서 시험함
 pip install -r requirements.txt
 cp .env.example .env                 # OPENAI_API_KEY, DISCORD_WEBHOOK_URL 입력 (.env 는 Git 에 올라가지 않음)
 python run.py                        # 수집→발행 전체를 돌리되 발송 없이 내용만 확인(dry-run)
-python run.py --publish              # 검수를 통과한 내용을 Discord 로 실제 발송
-python -m unittest discover -s tests -t .   # 오프라인 시험 26건 (모델·네트워크 불필요)
+python run.py --show-prepared RUN_ID  # 저장된 실제 발송 내용·SHA256 확인, 모델 호출 없음
+python run.py --send-prepared RUN_ID --confirm-hash SHA256  # 내용 확인·별도 승인 후 같은 준비본만 발송
+python -m unittest discover -s tests -t . -p "*.py"  # 한국어 이름의 보완 검사도 포함
 ```
 
 ## 부록 B. 파일 구성
@@ -163,19 +176,21 @@ python -m unittest discover -s tests -t .   # 오프라인 시험 26건 (모델�
 | 파일 | 역할 |
 |---|---|
 | `graph.py` | State, 5개 노드, 코드가 확정하는 규칙, 그래프 조립 |
-| `run.py` | 실행 스크립트(`--publish`, `--hours`) |
+| `run.py` | 생성·준비, `--show-prepared`, `--send-prepared`·`--confirm-hash`, `--hours` |
+| `호출예산.py`, `발행승인.py` | 영속 실제 요청 상한, 불변 준비본·승인·일회 전송·재조회 |
+| `tools/연결확인.py` | 실제 구조화 응답 한 번으로 연결 확인·비밀 없는 결과 저장 |
 | `audience.yaml` | 독자·중요도 문장·제외 조건·검수 기준(사용자 편집 영역) |
 | `config.yaml` | 소스 목록, 모델명·주소, 묶음 크기, 상한 등 운영 설정 |
 | `store/metrics.jsonl` | 실행·선별·검수·발행 기록(한 줄에 이벤트 하나) |
 | `store/source_survey.json` | 소스 실측 원자료 |
 | `collectors.py`, `net.py`, `llm.py`, `metrics.py`, `publisher.py`, `config.py` | 수집·HTTP·모델 호출·기록·발행·설정 로드 |
 | `tools/` | 소스 실측, 채택표, 표본 추출, 라벨링 위젯, 선별 평가, 검수 시험 |
-| `tests/` | 오프라인 시험 26건 |
+| `tests/` | 기존 분기 시험과 예산·발행 승인·CLI·연결 검사 |
 | `eval/` | 정답 라벨용 표본·라벨·평가 결과 |
 
 ## 부록 C. 한계와 아직 확인하지 못한 것
 
-- 실제 모델로 파이프라인을 끝까지 돌린 기록, 라벨 평가, 검수 시험, Discord 발송은 아직 없다(5절).
+- 실제 모델의 연결 1회는 성공했지만 파이프라인 전체 실행, 라벨 평가, 검수 시험, Discord 발송은 아직 없다(5절).
 - 자동 예약 실행(GitHub Actions)은 구현하지 않았다. 과제의 필수 5단계에 포함되지 않아 이번 범위에서 뺐다.
 - 소스 측정은 2026-10-29 한 시점의 값이다. 피드의 발행량과 접근 정책은 바뀔 수 있다.
 - 글자 수 관문(G1)이 놓치는 경우가 있어 사람의 확인이 필요했다(2절).

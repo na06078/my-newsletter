@@ -1,0 +1,16 @@
+{
+  "run_id": "connection-20261029T061019Z",
+  "status": "ok",
+  "requested_model": "gpt-4o-mini",
+  "observed_model": "gpt-4o-mini-2024-07-18",
+  "budget_before": {
+    "limit": 65,
+    "used": 0,
+    "remaining": 65
+  },
+  "budget_after": {
+    "limit": 65,
+    "used": 1,
+    "remaining": 64
+  }
+}

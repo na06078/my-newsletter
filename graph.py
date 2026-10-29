@@ -448,6 +448,8 @@ def run_pipeline(settings: dict, *, publish: bool, hours: int | None = None) -> 
 
     publish=False 이면 발송하지 않고 내용만 만든다(dry-run). 기록은 store/metrics.jsonl 에 남는다.
     """
+    if publish:
+        raise ValueError("즉시 발송은 허용하지 않습니다. 저장한 준비본을 확인하고 승인한 뒤 발송하세요.")
     cfg = settings["cfg"]
     hours = hours or cfg["collect"]["hours"]
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:4]

@@ -14,6 +14,7 @@ llm:
   temperature: 0
   timeout_s: 60
   max_retries: 2
+  request_limit: 65                # 실패·재시도 포함 실제 요청 누적 상한. 장부 초기화·자동 증액 금지
 
 collect:
   hours: 48                        # 수집 창. 블로그류는 주 3~6건이라 24시간이면 후보가 얇다

@@ -7,7 +7,10 @@
 """
 from __future__ import annotations
 
+import copy
+import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 
@@ -68,8 +71,9 @@ def build_embeds(run_label: str, title: str, articles: list[dict], stats: dict, 
 
 
 class DiscordPublisher:
-    def __init__(self, webhook_url: str | None, *, live: bool, post=requests.post, sleep=time.sleep) -> None:
+    def __init__(self, webhook_url: str | None, *, live: bool, post=requests.post, get=requests.get, sleep=time.sleep) -> None:
         self.webhook_url, self.live, self._post, self._sleep = webhook_url, live, post, sleep
+        self._get = get
 
     @classmethod
     def from_env(cls, publish_cfg: dict, *, live: bool) -> "DiscordPublisher":
@@ -81,7 +85,7 @@ class DiscordPublisher:
             return {**base, "status": "dry_run"}
         if not self.webhook_url:
             return {**base, "status": "skipped_no_webhook"}
-        payload = {"username": username, "embeds": embeds}
+        payload = {"username": username, "embeds": copy.deepcopy(embeds), "allowed_mentions": {"parse": []}}
         try:
             resp = self._send(payload)
             if resp.status_code == 429:                     # 요청 한도: 알려 준 시간만큼 쉬고 한 번만 다시
@@ -94,11 +98,44 @@ class DiscordPublisher:
             message_id = None
             if resp.status_code == 200:
                 try:
-                    message_id = resp.json().get("id")
+                    candidate_id = resp.json().get("id")
+                    if self._valid_message_id(candidate_id):
+                        message_id = candidate_id
                 except ValueError:
                     pass
             return {**base, "status": "sent", "http_status": resp.status_code, "message_id": message_id}
-        return {**base, "status": "failed", "http_status": resp.status_code, "error": resp.text[:120]}
+        return {**base, "status": "failed", "http_status": resp.status_code, "error": "HTTPError"}
+
+    @staticmethod
+    def _valid_message_id(message_id):
+        return isinstance(message_id, str) and message_id.isascii() and message_id.isdigit() and len(message_id) <= 30
+
+    def read_message(self, message_id: str) -> dict:
+        """전송 메시지 재조회. URL·응답 오류 본문은 결과에 포함하지 않는다."""
+        if not self._valid_message_id(message_id):
+            return {"status": "failed", "error": "invalid_message_id"}
+        if not self.live:
+            return {"status": "dry_run"}
+        if not self.webhook_url:
+            return {"status": "skipped_no_webhook"}
+        try:
+            # query는 실행 옵션이며 메시지 리소스 경로의 일부가 아니다.
+            from urllib.parse import urlsplit, urlunsplit
+            parts = urlsplit(self.webhook_url)
+            url = urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/") + "/messages/" + message_id, parts.query, ""))
+            response = self._get(url, timeout=20)
+            if response.status_code != 200:
+                return {"status": "failed", "http_status": response.status_code, "error": "HTTPError"}
+            message = response.json()
+            if not isinstance(message, dict) or message.get("id") != message_id:
+                return {"status": "failed", "error": "invalid_message"}
+            # 오류 응답에 토큰 주소가 반사된 경우에도 비밀을 반환하지 않는다.
+            raw = json.dumps(message, ensure_ascii=False)
+            if self.webhook_url in raw or re.search(r"https?://(?:[a-z]+\.)?discord(?:app)?\.com/api(?:/v[0-9]+)?/webhooks/", raw, re.I):
+                return {"status": "failed", "error": "unsafe_response"}
+            return {"status": "read", "http_status": 200, "message": copy.deepcopy(message)}
+        except (requests.RequestException, ValueError, TypeError):
+            return {"status": "failed", "error": "read_failed"}
 
     def _send(self, payload: dict):
         # wait=true: 전송된 메시지 정보(id)를 응답으로 돌려받아 '실제로 올라갔다'는 증거로 쓴다
