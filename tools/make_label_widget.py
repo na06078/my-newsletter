@@ -43,9 +43,9 @@ TEMPLATE = r"""<!doctype html>
 <body>
 <p class="hint">내 기준으로 <b>"오늘 내가 알아야 할 소식인가"</b>를 직관대로 골라 주세요. 모델이 무엇을 골랐는지는 보이지 않습니다(blind).
  제목을 누르면 원문이 열립니다. 모르겠으면 <b>무관</b>으로 두세요. 30건 중 25건 이상 고르면 제출할 수 있습니다.</p>
+<div class="bar"><button class="submit" id="submit">라벨 제출</button><span id="status" class="hint"></span></div>
 <div class="bar"><span class="progress" id="progress"></span><span class="nav" id="nav"></span></div>
 <div id="list"></div>
-<div class="bar"><button class="submit" id="submit">라벨 제출</button><span id="status" class="hint"></span></div>
 <div id="fallback"></div>
 <script>
 const DATA = /*DATA*/;
@@ -90,19 +90,36 @@ document.addEventListener("click", ev => {
   else if (b.id === "next") { page = Math.min(Math.ceil(DATA.items.length / PER) - 1, page + 1); render(); }
   else if (b.id === "submit") { submit(); }
 });
+const ENDPOINT = "http://127.0.0.1:8765/labels";
+function sentFlag() { try { return localStorage.getItem("sent-" + DATA.snapshot) === "1"; } catch (e) { return false; } }
+function markSent() { try { localStorage.setItem("sent-" + DATA.snapshot, "1"); } catch (e) {} }
+function showFallback(text) {
+  document.getElementById("fallback").replaceChildren(
+    el("p", {class: "hint", textContent: "자동 저장이 안 됩니다. 아래 내용을 복사해 대화창에 붙여 넣어 주세요."}),
+    el("textarea", {readOnly: true, value: text}));
+}
 function submit() {
   const text = "[라벨링 제출] " + JSON.stringify({snapshot: DATA.snapshot, labels: labels});
+  const status = document.getElementById("status");
   if (window.hermes && window.hermes.send) {
     window.hermes.send(text); submitted = true;
-    document.getElementById("status").textContent = "제출했습니다. 저장 결과가 곧 표시됩니다.";
+    status.textContent = "제출했습니다. 저장 결과가 곧 표시됩니다.";
     render();
-  } else {
-    document.getElementById("fallback").replaceChildren(
-      el("p", {class: "hint", textContent: "대화창 밖에서 열려 자동 제출이 안 됩니다. 아래 내용을 복사해 대화창에 붙여 넣어 주세요."}),
-      el("textarea", {readOnly: true, value: text}));
+    return;
   }
+  status.textContent = "저장 중...";
+  // 대화창 밖에서 열었을 때: 이 PC 안(127.0.0.1)의 임시 수신기로만 보낸다
+  fetch(ENDPOINT, {method: "POST", headers: {"Content-Type": "text/plain;charset=UTF-8"},
+                   body: JSON.stringify({snapshot: DATA.snapshot, labels: labels})})
+    .then(r => r.json())
+    .then(j => {
+      if (!j.ok) throw new Error(j.error || "저장 실패");
+      markSent(); submitted = true; status.textContent = `저장했습니다 (${j.count}건).`; render();
+    })
+    .catch(() => { status.textContent = "자동 저장에 실패했습니다."; showFallback(text); });
 }
 render();
+if (!(window.hermes && window.hermes.send) && Object.keys(labels).length >= 25 && !sentFlag()) { submit(); }
 </script></body></html>
 """
 
