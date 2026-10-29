@@ -1,0 +1,24 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	collect(collect)
+	select(select)
+	report(report)
+	verify(verify)
+	publish(publish)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> collect;
+	collect --> select;
+	report --> verify;
+	select -.-> publish;
+	select -.-> report;
+	verify -.-> publish;
+	verify -.-> report;
+	publish --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

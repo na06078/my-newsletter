@@ -12,3 +12,8 @@
 - 소스 실측 도구와 결과(`tools/survey_sources.py`, `store/source_survey.json`), 채택표 생성(`tools/render_survey_table.py`)
 - 정답 라벨용 표본 추출·라벨링 위젯(`tools/snapshot_candidates.py`, `tools/make_label_widget.py`), 선별 평가·검수 시험 도구(`tools/eval_selection.py`, `tools/negative_control.py`)
 - 오프라인 시험 26건(`tests/`)
+- `REPORT.md` 초안: 소스 채택표(실측), 선별 로직 설계, 파이프라인 구조도(코드에서 추출), 예외 처리표. 모델 실행 결과·사용자 작성 항목은 `[작성 대기]`로 표시
+- `store/graph_mermaid.txt`: 컴파일된 그래프에서 뽑은 Mermaid 구조도
+
+### 변경
+- `requirements.txt`를 시험한 버전(Python 3.12.10)으로 고정
