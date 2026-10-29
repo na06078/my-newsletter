@@ -1,0 +1,704 @@
+{
+  "surveyed_at_utc": "2026-10-29T03:14:43+00:00",
+  "surveyed_at_kst": "2026-10-29T12:14:43+09:00",
+  "user_agent": "newsletter-agent-course/0.1 (personal learning project)",
+  "min_body_chars": 600,
+  "body_samples": 3,
+  "min_items_7d": 3,
+  "requests_made_this_run": 50,
+  "sources": [
+    {
+      "id": "hf_blog",
+      "name": "Hugging Face Blog",
+      "route": "rss",
+      "tier": 1,
+      "lang": "en",
+      "url": "https://huggingface.co/blog/feed.xml",
+      "robots_feed": "allowed",
+      "http": {
+        "status": 200,
+        "ms": 264,
+        "bytes": 263265,
+        "final_url": "https://huggingface.co/blog/feed.xml",
+        "content_type": "application/rss+xml; charset=utf-8",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 891,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 1,
+      "items_72h": 3,
+      "items_7d": 6,
+      "newest_age_h": 12.3,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": 0.17,
+      "body_samples": [
+        {
+          "url": "https://huggingface.co/blog/nvidia/nemotron-transcribe-granary",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 16445,
+          "ok": true,
+          "ms": 429,
+          "source": "page"
+        },
+        {
+          "url": "https://huggingface.co/blog/LiquidAI/lfm3",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 18772,
+          "ok": true,
+          "ms": 263,
+          "source": "page"
+        },
+        {
+          "url": "https://huggingface.co/blog/allenai/novelty-bench",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 10805,
+          "ok": true,
+          "ms": 248,
+          "source": "page"
+        }
+      ],
+      "body_ok": "3/3",
+      "gates": {
+        "G1": true,
+        "G2": true,
+        "G3": true
+      }
+    },
+    {
+      "id": "langchain_blog",
+      "name": "LangChain Blog",
+      "route": "rss",
+      "tier": 1,
+      "lang": "en",
+      "url": "https://blog.langchain.com/rss/",
+      "robots_feed": "no_robots",
+      "http": {
+        "status": 200,
+        "ms": 362,
+        "bytes": 212269,
+        "final_url": "https://www.langchain.com/blog",
+        "content_type": "text/html; charset=utf-8",
+        "error": null
+      },
+      "parse_ok": false,
+      "entries": 0,
+      "dated_ratio": 0,
+      "future_dated": 0,
+      "items_24h": 0,
+      "items_72h": 0,
+      "items_7d": 0,
+      "newest_age_h": null,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": null,
+      "body_samples": [],
+      "body_ok": "0/0",
+      "gates": {
+        "G1": false,
+        "G2": false,
+        "G3": true
+      }
+    },
+    {
+      "id": "simonw",
+      "name": "Simon Willison's Weblog",
+      "route": "atom",
+      "tier": 2,
+      "lang": "en",
+      "url": "https://simonwillison.net/atom/everything/",
+      "robots_feed": "allowed",
+      "http": {
+        "status": 200,
+        "ms": 203,
+        "bytes": 144419,
+        "final_url": "https://simonwillison.net/atom/everything/",
+        "content_type": "application/xml; charset=utf-8",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 30,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 4,
+      "items_72h": 8,
+      "items_7d": 15,
+      "newest_age_h": 3.9,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": 0.2,
+      "body_samples": [
+        {
+          "url": "https://simonwillison.net/2026/Oct/28/ted-sanders/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 1337,
+          "ok": true,
+          "ms": 205,
+          "source": "page"
+        },
+        {
+          "url": "https://simonwillison.net/2026/Oct/28/github-octoverse-2026/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 1934,
+          "ok": true,
+          "ms": 162,
+          "source": "page"
+        },
+        {
+          "url": "https://simonwillison.net/2026/Oct/28/vibe-game-development/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 13334,
+          "ok": true,
+          "ms": 164,
+          "source": "page"
+        }
+      ],
+      "body_ok": "3/3",
+      "gates": {
+        "G1": true,
+        "G2": true,
+        "G3": true
+      }
+    },
+    {
+      "id": "geeknews",
+      "name": "GeekNews",
+      "route": "rss",
+      "tier": 2,
+      "lang": "ko",
+      "url": "https://news.hada.io/rss/news",
+      "robots_feed": "allowed",
+      "http": {
+        "status": 200,
+        "ms": 12,
+        "bytes": 45766,
+        "final_url": "https://news.hada.io/rss/news",
+        "content_type": "application/atom+xml; charset=UTF-8",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 50,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 47,
+      "items_72h": 50,
+      "items_7d": 50,
+      "newest_age_h": 0.6,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": 0.16,
+      "body_samples": [
+        {
+          "url": "https://news.hada.io/topic?id=36205",
+          "robots": "allowed",
+          "status": 403,
+          "chars": 0,
+          "ok": false,
+          "ms": 7,
+          "source": "page"
+        },
+        {
+          "url": "https://news.hada.io/topic?id=36204",
+          "robots": "allowed",
+          "status": 403,
+          "chars": 0,
+          "ok": false,
+          "ms": 6,
+          "source": "page"
+        },
+        {
+          "url": "https://news.hada.io/topic?id=36202",
+          "robots": "allowed",
+          "status": 403,
+          "chars": 0,
+          "ok": false,
+          "ms": 7,
+          "source": "page"
+        }
+      ],
+      "body_ok": "0/3",
+      "gates": {
+        "G1": false,
+        "G2": true,
+        "G3": true
+      }
+    },
+    {
+      "id": "latent_space",
+      "name": "Latent Space",
+      "route": "rss",
+      "tier": 2,
+      "lang": "en",
+      "url": "https://www.latent.space/feed",
+      "robots_feed": "allowed",
+      "http": {
+        "status": 200,
+        "ms": 819,
+        "bytes": 1385145,
+        "final_url": "https://latent.space/feed",
+        "content_type": "application/rss+xml; charset=utf-8",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 20,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 2,
+      "items_72h": 6,
+      "items_7d": 12,
+      "newest_age_h": 7.4,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": 0.42,
+      "body_samples": [
+        {
+          "url": "https://latent.space/p/supabase/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 5625,
+          "ok": true,
+          "ms": 294,
+          "source": "page"
+        },
+        {
+          "url": "https://latent.space/p/ainews-anthropic-ends-coding-interviews-hunger-beats-tenure/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 45909,
+          "ok": true,
+          "ms": 300,
+          "source": "page"
+        },
+        {
+          "url": "https://latent.space/p/opus55/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 129786,
+          "ok": true,
+          "ms": 221,
+          "source": "page"
+        }
+      ],
+      "body_ok": "3/3",
+      "gates": {
+        "G1": true,
+        "G2": true,
+        "G3": true
+      }
+    },
+    {
+      "id": "reddit_localllama",
+      "name": "Reddit r/LocalLLaMA",
+      "route": "atom",
+      "tier": 2,
+      "lang": "en",
+      "url": "https://www.reddit.com/r/LocalLLaMA/.rss",
+      "robots_feed": "disallowed",
+      "http": null,
+      "parse_ok": false,
+      "gates": {
+        "G1": false,
+        "G2": false,
+        "G3": false
+      }
+    },
+    {
+      "id": "amd_rocm_blog",
+      "name": "AMD ROCm Blogs",
+      "route": "rss",
+      "tier": 1,
+      "lang": "en",
+      "url": "https://rocm.blogs.amd.com/feed.xml",
+      "robots_feed": "allowed",
+      "http": {
+        "status": 404,
+        "ms": 481,
+        "bytes": 16005,
+        "final_url": "https://rocm.blogs.amd.com/feed.xml",
+        "content_type": "text/html; charset=utf-8",
+        "error": null
+      },
+      "parse_ok": false,
+      "gates": {
+        "G1": false,
+        "G2": false,
+        "G3": false
+      }
+    },
+    {
+      "id": "the_decoder",
+      "name": "The Decoder",
+      "route": "rss",
+      "tier": 2,
+      "lang": "en",
+      "url": "https://the-decoder.com/feed/",
+      "robots_feed": "allowed",
+      "http": {
+        "status": 200,
+        "ms": 1279,
+        "bytes": 20613,
+        "final_url": "https://the-decoder.com/feed/",
+        "content_type": "application/rss+xml; charset=UTF-8",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 10,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 8,
+      "items_72h": 10,
+      "items_7d": 10,
+      "newest_age_h": 7.9,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": 0.5,
+      "body_samples": [
+        {
+          "url": "https://the-decoder.com/google-deepmind-releases-gemini-4-carbon-just-two-weeks-after-argon-with-gains-across-the-board/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 7158,
+          "ok": true,
+          "ms": 574,
+          "source": "page"
+        },
+        {
+          "url": "https://the-decoder.com/google-opens-android-development-to-third-party-ai-agents-and-unveils-new-gemini-apis/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 6982,
+          "ok": true,
+          "ms": 289,
+          "source": "page"
+        },
+        {
+          "url": "https://the-decoder.com/openai-teases-dots-for-europe-but-its-berlin-devday-was-really-about-building-a-platform/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 3672,
+          "ok": true,
+          "ms": 289,
+          "source": "page"
+        }
+      ],
+      "body_ok": "3/3",
+      "gates": {
+        "G1": true,
+        "G2": true,
+        "G3": true
+      }
+    },
+    {
+      "id": "gh_llamacpp",
+      "name": "GitHub Releases ggml-org/llama.cpp",
+      "route": "github_atom",
+      "tier": 1,
+      "lang": "en",
+      "url": "https://github.com/ggml-org/llama.cpp/releases.atom",
+      "robots_feed": "allowed",
+      "http": {
+        "status": 200,
+        "ms": 1362,
+        "bytes": 366600,
+        "final_url": "https://github.com/ggml-org/llama.cpp/releases.atom",
+        "content_type": "application/atom+xml; charset=utf-8",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 10,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 10,
+      "items_72h": 10,
+      "items_7d": 10,
+      "newest_age_h": 0.7,
+      "feed_saturated_24h": true,
+      "keyword_hit_7d": 0.5,
+      "body_samples": [
+        {
+          "url": "https://github.com/ggml-org/llama.cpp/releases/tag/b11976",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 686,
+          "ok": true,
+          "ms": 563,
+          "source": "page"
+        },
+        {
+          "url": "https://github.com/ggml-org/llama.cpp/releases/tag/b11974",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 237,
+          "ok": false,
+          "ms": 521,
+          "source": "page"
+        },
+        {
+          "url": "https://github.com/ggml-org/llama.cpp/releases/tag/b11972",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 1396,
+          "ok": true,
+          "ms": 553,
+          "source": "page"
+        }
+      ],
+      "body_ok": "2/3",
+      "gates": {
+        "G1": true,
+        "G2": true,
+        "G3": true
+      }
+    },
+    {
+      "id": "gh_langgraph",
+      "name": "GitHub Releases langchain-ai/langgraph",
+      "route": "github_atom",
+      "tier": 1,
+      "lang": "en",
+      "url": "https://github.com/langchain-ai/langgraph/releases.atom",
+      "robots_feed": "allowed",
+      "http": {
+        "status": 200,
+        "ms": 645,
+        "bytes": 40104,
+        "final_url": "https://github.com/langchain-ai/langgraph/releases.atom",
+        "content_type": "application/atom+xml; charset=utf-8",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 10,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 0,
+      "items_72h": 5,
+      "items_7d": 8,
+      "newest_age_h": 55.2,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": 1.0,
+      "body_samples": [
+        {
+          "url": "https://github.com/langchain-ai/langgraph/releases/tag/1.2.18",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 803,
+          "ok": true,
+          "ms": 671,
+          "source": "page"
+        },
+        {
+          "url": "https://github.com/langchain-ai/langgraph/releases/tag/sdk%3D%3D0.4.10",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 491,
+          "ok": false,
+          "ms": 773,
+          "source": "page"
+        },
+        {
+          "url": "https://github.com/langchain-ai/langgraph/releases/tag/checkpoint%3D%3D4.3.1",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 2536,
+          "ok": true,
+          "ms": 627,
+          "source": "page"
+        }
+      ],
+      "body_ok": "2/3",
+      "gates": {
+        "G1": true,
+        "G2": true,
+        "G3": true
+      }
+    },
+    {
+      "id": "gh_rocm",
+      "name": "GitHub Releases ROCm/ROCm",
+      "route": "github_atom",
+      "tier": 1,
+      "lang": "en",
+      "url": "https://github.com/ROCm/ROCm/releases.atom",
+      "robots_feed": "allowed",
+      "http": {
+        "status": 200,
+        "ms": 722,
+        "bytes": 674475,
+        "final_url": "https://github.com/ROCm/legacy-rocm-build/releases.atom",
+        "content_type": "application/atom+xml; charset=utf-8",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 10,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 0,
+      "items_72h": 0,
+      "items_7d": 0,
+      "newest_age_h": 2519.6,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": null,
+      "body_samples": [
+        {
+          "url": "https://github.com/ROCm/legacy-rocm-build/releases/tag/rocm-7.14.0",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 38972,
+          "ok": true,
+          "ms": 605,
+          "source": "page"
+        },
+        {
+          "url": "https://github.com/ROCm/legacy-rocm-build/releases/tag/test-search",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 331,
+          "ok": false,
+          "ms": 416,
+          "source": "page"
+        },
+        {
+          "url": "https://github.com/ROCm/legacy-rocm-build/releases/tag/rocm-7.2.4",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 16259,
+          "ok": true,
+          "ms": 650,
+          "source": "page"
+        }
+      ],
+      "body_ok": "2/3",
+      "gates": {
+        "G1": true,
+        "G2": false,
+        "G3": true
+      }
+    },
+    {
+      "id": "hn_algolia",
+      "name": "Hacker News (Algolia API, query llama.cpp)",
+      "route": "api_hn",
+      "tier": 2,
+      "lang": "en",
+      "url": "https://hn.algolia.com/api/v1/search_by_date?tags=story&query=llama.cpp&hitsPerPage=30",
+      "robots_feed": "n/a(API 약관 기준)",
+      "http": {
+        "status": 200,
+        "ms": 1500,
+        "bytes": 58416,
+        "final_url": "https://hn.algolia.com/api/v1/search_by_date?tags=story&query=llama.cpp&hitsPerPage=30",
+        "content_type": "application/json",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 30,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 2,
+      "items_72h": 3,
+      "items_7d": 4,
+      "newest_age_h": 6.9,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": 0.75,
+      "body_samples": [
+        {
+          "url": "https://github.com/ChrystianSchutz/ThreadShelf",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 38618,
+          "ok": true,
+          "ms": 581,
+          "source": "page"
+        },
+        {
+          "url": "https://github.com/FrigadeHQ/hob",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 1167,
+          "ok": true,
+          "ms": 502,
+          "source": "page"
+        },
+        {
+          "url": "https://qxotic.ai/",
+          "robots": "allowed",
+          "status": 200,
+          "chars": 1305,
+          "ok": true,
+          "ms": 309,
+          "source": "page"
+        }
+      ],
+      "body_ok": "3/3",
+      "gates": {
+        "G1": true,
+        "G2": true,
+        "G3": true
+      }
+    },
+    {
+      "id": "arxiv_cs_cl_agent",
+      "name": "arXiv API (cs.CL, keyword agent)",
+      "route": "api_arxiv",
+      "tier": 1,
+      "lang": "en",
+      "url": "https://export.arxiv.org/api/query?search_query=cat:cs.CL+AND+abs:agent&sortBy=submittedDate&sortOrder=descending&max_results=30",
+      "robots_feed": "n/a(API 약관 기준)",
+      "http": {
+        "status": 200,
+        "ms": 1648,
+        "bytes": 82595,
+        "final_url": "https://export.arxiv.org/api/query?search_query=cat:cs.CL+AND+abs:agent&sortBy=submittedDate&sortOrder=descending&max_results=30",
+        "content_type": "application/atom+xml; charset=utf-8",
+        "error": null
+      },
+      "parse_ok": true,
+      "entries": 30,
+      "dated_ratio": 1.0,
+      "future_dated": 0,
+      "items_24h": 0,
+      "items_72h": 30,
+      "items_7d": 30,
+      "newest_age_h": 33.3,
+      "feed_saturated_24h": false,
+      "keyword_hit_7d": 0.8,
+      "body_samples": [
+        {
+          "url": "https://arxiv.org/abs/2610.37657v1",
+          "robots": "n/a",
+          "status": 200,
+          "chars": 1595,
+          "ok": true,
+          "ms": null,
+          "source": "feed_inline"
+        },
+        {
+          "url": "https://arxiv.org/abs/2610.37651v1",
+          "robots": "n/a",
+          "status": 200,
+          "chars": 1273,
+          "ok": true,
+          "ms": null,
+          "source": "feed_inline"
+        },
+        {
+          "url": "https://arxiv.org/abs/2610.37649v1",
+          "robots": "n/a",
+          "status": 200,
+          "chars": 1186,
+          "ok": true,
+          "ms": null,
+          "source": "feed_inline"
+        }
+      ],
+      "body_ok": "3/3",
+      "gates": {
+        "G1": true,
+        "G2": true,
+        "G3": true
+      }
+    }
+  ]
+}

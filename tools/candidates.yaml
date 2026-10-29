@@ -1,0 +1,56 @@
+# 소스 후보 목록 — tools/survey_sources.py 의 입력이다.
+# 과제 규정상 제외된 6곳(OpenAI, DeepMind, TechCrunch, The Verge, MIT TR, AI타임스)은 후보에 넣지 않는다.
+# route: rss | atom | github_atom | api_hn | api_arxiv
+# tier : 1 = 1차 소스(직접 발표), 2 = 2차 소스(취재·분석·모음)
+
+excluded_by_assignment:
+  - {name: "OpenAI",     host: "openai.com"}
+  - {name: "DeepMind",   host: "deepmind.google"}
+  - {name: "TechCrunch", host: "techcrunch.com"}
+  - {name: "The Verge",  host: "theverge.com"}
+  - {name: "MIT TR",     host: "technologyreview.com"}
+  - {name: "AI타임스",    host: "aitimes.com"}
+
+# 키워드 일치율은 '독자 관련도'의 거친 근사치일 뿐이다. 채택 관문이 아니라 참고 수치로만 쓴다.
+topic_keywords:
+  - llama
+  - gguf
+  - local llm
+  - on-device
+  - quantiz
+  - inference
+  - rocm
+  - vulkan
+  - amd
+  - langgraph
+  - langchain
+  - agent
+  - mcp
+  - ollama
+  - vllm
+  - qwen
+  - gemma
+  - mistral
+  - open-weight
+  - open-source
+  - lm studio
+  - 에이전트
+  - 로컬
+  - 양자화
+  - 오픈소스
+  - 추론
+
+candidates:
+  - {id: "hf_blog",           name: "Hugging Face Blog",                        route: "rss",         tier: 1, lang: "en", url: "https://huggingface.co/blog/feed.xml"}
+  - {id: "langchain_blog",    name: "LangChain Blog",                           route: "rss",         tier: 1, lang: "en", url: "https://blog.langchain.com/rss/"}
+  - {id: "simonw",            name: "Simon Willison's Weblog",                  route: "atom",        tier: 2, lang: "en", url: "https://simonwillison.net/atom/everything/"}
+  - {id: "geeknews",          name: "GeekNews",                                 route: "rss",         tier: 2, lang: "ko", url: "https://news.hada.io/rss/news"}
+  - {id: "latent_space",      name: "Latent Space",                             route: "rss",         tier: 2, lang: "en", url: "https://www.latent.space/feed"}
+  - {id: "reddit_localllama", name: "Reddit r/LocalLLaMA",                      route: "atom",        tier: 2, lang: "en", url: "https://www.reddit.com/r/LocalLLaMA/.rss"}
+  - {id: "amd_rocm_blog",     name: "AMD ROCm Blogs",                           route: "rss",         tier: 1, lang: "en", url: "https://rocm.blogs.amd.com/feed.xml"}
+  - {id: "the_decoder",       name: "The Decoder",                              route: "rss",         tier: 2, lang: "en", url: "https://the-decoder.com/feed/"}
+  - {id: "gh_llamacpp",       name: "GitHub Releases ggml-org/llama.cpp",       route: "github_atom", tier: 1, lang: "en", url: "https://github.com/ggml-org/llama.cpp/releases.atom"}
+  - {id: "gh_langgraph",      name: "GitHub Releases langchain-ai/langgraph",   route: "github_atom", tier: 1, lang: "en", url: "https://github.com/langchain-ai/langgraph/releases.atom"}
+  - {id: "gh_rocm",           name: "GitHub Releases ROCm/ROCm",                route: "github_atom", tier: 1, lang: "en", url: "https://github.com/ROCm/ROCm/releases.atom"}
+  - {id: "hn_algolia",        name: "Hacker News (Algolia API, query llama.cpp)", route: "api_hn",    tier: 2, lang: "en", url: "https://hn.algolia.com/api/v1/search_by_date?tags=story&query=llama.cpp&hitsPerPage=30"}
+  - {id: "arxiv_cs_cl_agent", name: "arXiv API (cs.CL, keyword agent)",         route: "api_arxiv",   tier: 1, lang: "en", url: "https://export.arxiv.org/api/query?search_query=cat:cs.CL+AND+abs:agent&sortBy=submittedDate&sortOrder=descending&max_results=30"}

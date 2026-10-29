@@ -1,0 +1,16 @@
+# 비밀값 — 절대 올리지 않는다 (.env.example 만 예외)
+.env
+.env.*
+!.env.example
+
+# 가상환경·캐시
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 임시 파일
+*.tmp
+
+# 로컬 실행 캐시 — 기사 본문이 들어 있어(저작권·용량) 올리지 않는다
+store/cache/
