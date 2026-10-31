@@ -9,16 +9,19 @@ graph TD;
 	select(select)
 	report(report)
 	verify(verify)
-	publish(publish)
+	prepare_publication(prepare_publication)
+	send_publication(send_publication)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> collect;
 	collect --> select;
+	prepare_publication -.-> __end__;
+	prepare_publication -.-> send_publication;
 	report --> verify;
-	select -.-> publish;
+	select -.-> prepare_publication;
 	select -.-> report;
-	verify -.-> publish;
+	verify -.-> prepare_publication;
 	verify -.-> report;
-	publish --> __end__;
+	send_publication --> __end__;
 	classDef default fill:#f2f0ff,line-height:1.2
 	classDef first fill-opacity:0
 	classDef last fill:#bfb6fc

@@ -1,8 +1,9 @@
 """뉴스레터 에이전트 — LangGraph 워크플로 메인 로직.
 
 START → collect → select(예선→본선) → report(기사별 병렬) → verify
-      → [불합격이면 재생성 1회] → publish → END
+      → [불합격이면 재생성 1회] → prepare_publication → send_publication → END
 
+사람이 중간에 확인하는 단계는 없다. `send=False`(dry-run)일 때만 prepare_publication 에서 끝난다.
 설정은 config.yaml(운영)·audience.yaml(편집 기준)·.env(비밀값)로 분리되어 있다.
 모델 판단(선별·요약·검수)은 제안일 뿐이고, 건수·중복·상한·통과 여부 같은 확정은 코드가 한다.
 """
@@ -27,7 +28,8 @@ import collectors
 from llm import LLM, LLMError
 from metrics import Metrics
 from net import Http, Robots, fetch_body
-from publisher import DiscordPublisher, build_embeds
+from publisher import DiscordPublisher, build_embeds, total_chars
+from 발행승인 import PublicationError, prepare_publication as save_publication, publish_prepared
 
 KST = timezone(timedelta(hours=9))
 
@@ -37,6 +39,7 @@ class Brief(TypedDict, total=False):
     """노드들이 주고받는 공통 데이터. 리듀서(operator.add)가 붙은 칸은 여러 노드의 결과를 이어 붙인다."""
     run_id: str
     hours: int                                  # 수집 시간 창
+    send: bool                                  # 참이면 준비본을 실제로 발송, 거짓이면 준비본까지만(dry-run)
     collected: list                             # ① 수집한 기사
     shortlisted: list                           # ② 예선 통과
     picked: list                                # ② 본선에서 고른 3~5건
@@ -45,7 +48,7 @@ class Brief(TypedDict, total=False):
     round: int                                  # 검수 회차 (0부터)
     verified: list                              # ④ 검수 통과분
     rejected: list                              # ④ 끝내 통과하지 못해 스킵한 기사
-    published: dict                             # ⑤ 발행 결과
+    published: dict                             # ⑤ 발행 결과: 준비(prepared) → 발송 결과(sent·failed 등)로 갱신
     log: Annotated[list, operator.add]
 
 
@@ -205,11 +208,16 @@ def derive_outcome(picked: list, drafted: list, verdicts: list) -> tuple[list, l
 
 # ── 파이프라인 ──────────────────────────────────────────────────────────────
 class Pipeline:
-    """다섯 노드와 연결 규칙. 외부 의존(LLM·HTTP·발행·기록)은 생성자로 받아 테스트에서 바꿔 끼운다."""
+    """다섯 단계의 노드와 연결 규칙. 외부 의존(LLM·HTTP·발행·기록)은 생성자로 받아 테스트에서 바꿔 끼운다.
 
-    def __init__(self, settings: dict, *, llm, http, robots, metrics, publisher, now_fn=None) -> None:
+    store: 준비본(보낼 내용)을 저장하는 폴더. 발행 노드 두 개만 쓰며, None 이면 그 노드는 실행을 거부한다
+    (시험이 실제 store/ 에 파일을 쓰는 사고를 막기 위해 기본값으로 실제 경로를 추정하지 않는다).
+    """
+
+    def __init__(self, settings: dict, *, llm, http, robots, metrics, publisher, store=None, now_fn=None) -> None:
         self.cfg, self.audience = settings["cfg"], settings["audience"]
         self.llm, self.http, self.robots, self.metrics, self.publisher = llm, http, robots, metrics, publisher
+        self.store = store
         self.now = now_fn or (lambda: datetime.now(timezone.utc))
 
     # ① 수집 ----------------------------------------------------------------
@@ -315,7 +323,7 @@ class Pipeline:
         """뽑힌 기사가 없으면 취재·검수를 건너뛰고 곧장 발행(조용한 날 카드)으로 간다.
         빈 Send 목록을 돌려주면 그래프가 거기서 멈추기 때문이다."""
         if not s["picked"]:
-            return "publish"
+            return "prepare_publication"
         return [Send("report", {"item": it, "attempt": 0, "feedback": None}) for it in s["picked"]]
 
     # ③ 요약·인사이트 ---------------------------------------------------------
@@ -419,21 +427,50 @@ class Pipeline:
                 sends.append(Send("report", {"item": by_id[v["article_id"]], "attempt": s["round"],
                                              "feedback": "\n".join(f"- {n}" for n in notes)}))
             return sends
-        return "publish"
+        return "prepare_publication"
 
-    # ⑤ 발행 -----------------------------------------------------------------
-    def publish(self, s: Brief) -> dict:
+    # ⑤ 발행: 준비(보낼 내용 확정·저장) → 발송(저장한 내용 그대로 전송·재조회) ------------
+    def _require_store(self) -> Path:
+        if self.store is None:
+            raise PublicationError("store_required")
+        return Path(self.store)
+
+    def prepare_publication(self, s: Brief) -> dict:
+        """검수 통과분으로 보낼 내용을 확정해 불변 준비본으로 저장한다. 외부 전송은 하지 않는다.
+
+        준비본은 사람의 승인용이 아니라 중복 발송 방지(claim)·변조 확인(해시)·발송 기록용이다.
+        """
+        store = self._require_store()
         verified = s.get("verified", [])
         stats = {"collected": len(s.get("collected", [])), "shortlisted": len(s.get("shortlisted", [])),
                  "picked": len(s.get("picked", [])), "verified": len(verified)}
         label = self.now().astimezone(KST).strftime("%Y-%m-%d")
         pcfg = self.cfg["publish"]
         embeds, trimmed = build_embeds(label, pcfg["title"], verified, stats, total_max=pcfg["total_chars_max"], now=self.now())
-        result = self.publisher.publish(embeds)
-        self.metrics.emit("publish", trimmed=trimmed, **stats, **result)
+        manifest = save_publication(store, s["run_id"], embeds, metadata={"counts": stats, "trimmed": trimmed})
+        self.metrics.emit("publication_prepared", sha256=manifest["sha256"], counts=stats, trimmed=trimmed)
+        prepared = {"status": "prepared", "sha256": manifest["sha256"], "embeds": len(embeds),
+                    "chars": total_chars(embeds), "trimmed": trimmed}
+        return {"published": prepared,
+                "log": [f"⑤ 발행   준비 {len(verified)}건 · 내용 확정(SHA256 {manifest['sha256'][:12]}…)"]}
+
+    def route_after_prepare(self, s: Brief):
+        """send 가 참이면 이어서 발송하고, 거짓(dry-run)이면 준비본까지만 만들고 끝낸다."""
+        return "send_publication" if s.get("send") else END
+
+    def send_publication(self, s: Brief) -> dict:
+        """방금 저장한 준비본을 그대로 전송하고 메시지를 다시 조회해 일치를 확인한다.
+
+        기존 publish_prepared 를 그대로 쓴다(일회성 claim·변조 검사·결과 불명 시 자동 재발송 금지).
+        """
+        store = self._require_store()
+        prepared = s["published"]
+        result = publish_prepared(store, s["run_id"], prepared["sha256"], self.publisher)
+        self.metrics.emit("publication_sent", sha256=prepared["sha256"], **result)
         http = f" (HTTP {result['http_status']})" if result.get("http_status") else ""
-        return {"published": {**result, "trimmed": trimmed},
-                "log": [f"⑤ 발행   {len(verified)}건 · {result['status']}{http}"]}
+        readback = result.get("readback", {}).get("status", "-")
+        return {"published": {**prepared, **result},
+                "log": [f"⑤ 발행   전송 {result['status']}{http} · 재조회 {readback}"]}
 
     # 그래프 조립 ---------------------------------------------------------------
     def build(self):
@@ -442,30 +479,38 @@ class Pipeline:
         g.add_node("select", self.select)
         g.add_node("report", self.report, input_schema=ReportIn)
         g.add_node("verify", self.verify)
-        g.add_node("publish", self.publish)
+        g.add_node("prepare_publication", self.prepare_publication)
+        g.add_node("send_publication", self.send_publication)
         g.add_edge(START, "collect")
         g.add_edge("collect", "select")
-        g.add_conditional_edges("select", self.route_after_select, ["report", "publish"])
+        g.add_conditional_edges("select", self.route_after_select, ["report", "prepare_publication"])
         g.add_edge("report", "verify")
-        g.add_conditional_edges("verify", self.route_after_verify, ["report", "publish"])
-        g.add_edge("publish", END)
+        g.add_conditional_edges("verify", self.route_after_verify, ["report", "prepare_publication"])
+        g.add_conditional_edges("prepare_publication", self.route_after_prepare, ["send_publication", END])
+        g.add_edge("send_publication", END)
         return g.compile()
 
 
 # ── 실행 ────────────────────────────────────────────────────────────────────
-def initial_state(run_id: str, hours: int) -> Brief:
-    return {"run_id": run_id, "hours": hours, "collected": [], "shortlisted": [], "picked": [], "drafted": [],
-            "verdicts": [], "round": 0, "verified": [], "rejected": [], "published": {}, "log": []}
+def initial_state(run_id: str, hours: int, send: bool = True) -> Brief:
+    """send 기본값은 True: 뉴스 에이전트는 실행하면 발행까지 끝내는 것이 기본이다."""
+    return {"run_id": run_id, "hours": hours, "send": send, "collected": [], "shortlisted": [], "picked": [],
+            "drafted": [], "verdicts": [], "round": 0, "verified": [], "rejected": [], "published": {}, "log": []}
 
 
 def run_pipeline(settings: dict, *, publish: bool, hours: int | None = None) -> dict:
     """실제 의존(OpenAI·네트워크·Discord)으로 파이프라인을 한 번 돌리고 최종 State 를 돌려준다.
 
-    publish=False 이면 발송하지 않고 내용만 만든다(dry-run). 기록은 store/metrics.jsonl 에 남는다.
+    publish=True 이면 수집부터 Discord 발송·재조회까지 끝낸다. publish=False(dry-run)이면 준비본까지만 만들고
+    보내지 않는다. 기록은 store/metrics.jsonl 에 남는다.
     """
-    if publish:
-        raise ValueError("즉시 발송은 허용하지 않습니다. 저장한 준비본을 확인하고 승인한 뒤 발송하세요.")
     cfg = settings["cfg"]
+    publisher = None
+    if publish:
+        # 유료 모델 호출 전에 발송 가능 여부부터 확인한다. 생성 비용을 쓴 뒤에야 못 보내는 일을 막는다.
+        publisher = DiscordPublisher.from_env(cfg["publish"], live=True)
+        if not publisher.webhook_url:
+            raise PublicationError("webhook_not_configured")
     hours = hours or cfg["collect"]["hours"]
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:4]
     store = Path(settings["root"]) / cfg["run"]["store_dir"]
@@ -481,8 +526,8 @@ def run_pipeline(settings: dict, *, publish: bool, hours: int | None = None) -> 
         http = Http(cfg["collect"]["user_agent"], cfg["collect"]["request_timeout_s"])
         llm = LLM(cfg["llm"], metrics)
         pipe = Pipeline(settings, llm=llm, http=http, robots=Robots(http), metrics=metrics,
-                        publisher=DiscordPublisher.from_env(cfg["publish"], live=publish))
-        final = pipe.build().invoke(initial_state(run_id, hours), config={"max_concurrency": 4})
+                        publisher=publisher, store=store)
+        final = pipe.build().invoke(initial_state(run_id, hours, send=publish), config={"max_concurrency": 4})
     except Exception as exc:
         metrics.emit("run_end", status="error", error=f"{type(exc).__name__}: {str(exc)[:200]}",
                      duration_s=round(time.perf_counter() - started, 1))

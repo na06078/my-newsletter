@@ -49,12 +49,27 @@ class FakeRobots:
 
 
 class FakePublisher:
+    """실제 Discord 대신 쓰는 발송기 대역. 발송 호출 횟수(calls)와 보낸 내용(embeds)을 기록한다.
+
+    발송 노드가 쓰는 계약(live·webhook_url·publish·read_message)을 모두 갖춘다.
+    """
+    live = True
+    webhook_url = "https://fake.invalid/incoming"      # 실제 주소가 아닌 자리 표시값
+
     def __init__(self, status: str = "sent") -> None:
-        self.status, self.embeds = status, None
+        self.status, self.embeds, self.username, self.calls = status, None, None, 0
 
     def publish(self, embeds, username="편집실") -> dict:
-        self.embeds = embeds
-        return {"embeds": len(embeds), "chars": 0, "status": self.status}
+        self.calls += 1
+        self.embeds, self.username = embeds, username
+        result = {"embeds": len(embeds), "chars": 0, "status": self.status}
+        if self.status == "sent":
+            result.update(http_status=200, message_id="123456")
+        return result
+
+    def read_message(self, message_id: str) -> dict:
+        message = {"id": message_id, "embeds": self.embeds, "author": {"username": self.username}}
+        return {"status": "read", "http_status": 200, "message": message}
 
 
 class FakeLLM:

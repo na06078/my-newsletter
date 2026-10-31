@@ -182,9 +182,10 @@ class CommandHTTPIntegrationTests(unittest.TestCase):
         return result
 
     def prepared(self):
-        result = self.cli()
+        """--dry-run 으로 보내지 않고 준비본만 만든다."""
+        result = self.cli("--dry-run")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("dry_run", result.stdout)
+        self.assertIn("발행 상태: prepared", result.stdout)
         paths = list((self.root / "store/cache/publications").glob("*.json"))
         self.assertEqual(len(paths), 1)
         manifest = json.loads(paths[0].read_text(encoding="utf-8"))
@@ -198,58 +199,62 @@ class CommandHTTPIntegrationTests(unittest.TestCase):
         self.assertIn(manifest["sha256"], result.stdout)
         return paths[0], manifest
 
-    def test_frozen_preview_confirmation_exact_send_and_duplicate(self):
-        path, manifest = self.prepared()
-        before = path.read_bytes()
+    def test_default_run_publishes_end_to_end_without_any_human_step(self):
+        result = self.cli()                                        # 플래그 없음: 수집부터 발송·재조회까지
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("발행 상태: sent", result.stdout)
+        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 8, "post": 1, "readback": 1})
+        paths = [p for p in (self.root / "store/cache/publications").glob("*.json")
+                 if not p.name.endswith((".claim.json", ".receipt.json"))]
+        self.assertEqual(len(paths), 1)
+        manifest = json.loads(paths[0].read_text(encoding="utf-8"))
         run_id, digest = manifest["run_id"], manifest["sha256"]
-        show = self.cli("--show-prepared", run_id)
+        self.assertIn(digest, result.stdout)
+        self.assertEqual(self.service.payload, manifest["payload"])          # 보낸 것 = 저장한 것
+        self.assertEqual(self.service.payload["allowed_mentions"], {"parse": []})
+        self.assertIn(("POST", "/incoming?wait=true"), [(m, p) for m, p, _ in self.service.events])
+        receipt = json.loads(paths[0].with_name(run_id + ".receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["sha256"], digest)
+        self.assertEqual(receipt["result"]["status"], "sent")
+        self.assertEqual(receipt["result"]["readback"], {"status": "verified"})
+        self.assertIn("Discord 메시지: 123456", result.stdout)
+        print("  합성 HTTP: 수집=1, LLM=8, POST=1, GET 재조회=1; 사람 개입 없이 끝까지 발송·재조회 확인")
+
+    def test_dry_run_saves_prepared_content_and_sends_nothing(self):
+        path, manifest = self.prepared()
+        show = self.cli("--show-prepared", manifest["run_id"])
         self.assertEqual(show.returncode, 0, show.stderr)
-        self.assertIn(digest, show.stdout)
+        self.assertIn(manifest["sha256"], show.stdout)
         for embed in manifest["payload"]["embeds"]:
             for key in ("title", "description", "url"):
                 if key in embed:
                     self.assertIn(embed[key], show.stdout)
-        missing = self.cli("--send-prepared", run_id)
-        self.assertEqual(missing.returncode, 2)
-        self.assertIn("--confirm-hash", missing.stderr)
-        wrong = self.cli("--send-prepared", run_id, "--confirm-hash", "0" * 64)
-        self.assertEqual(wrong.returncode, 1)
-        self.assertIn("confirmation_mismatch", wrong.stderr)
-        legacy = self.cli("--publish")
-        self.assertEqual(legacy.returncode, 2)
-        self.assertIn("즉시 발송은 중지", legacy.stderr)
+        self.assertFalse(path.with_name(manifest["run_id"] + ".claim.json").exists())
         self.assertEqual(self.service.counts(), {"feed": 1, "llm": 8, "post": 0, "readback": 0})
-        sent = self.cli("--send-prepared", run_id, "--confirm-hash", digest)
-        self.assertEqual(sent.returncode, 0, sent.stdout + sent.stderr)
-        outcome = json.loads(sent.stdout)
-        self.assertEqual(outcome["status"], "sent")
-        self.assertEqual(outcome["readback"], {"status": "verified"})
-        self.assertEqual(self.service.payload, manifest["payload"])
-        self.assertEqual(self.service.payload["allowed_mentions"], {"parse": []})
-        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 8, "post": 1, "readback": 1})
-        self.assertIn(("POST", "/incoming?wait=true"), [(m, p) for m, p, _ in self.service.events])
-        receipt = json.loads(path.with_name(run_id + ".receipt.json").read_text(encoding="utf-8"))
-        self.assertEqual(receipt["sha256"], digest)
-        self.assertEqual(receipt["result"], outcome)
-        again = self.cli("--send-prepared", run_id, "--confirm-hash", digest)
-        self.assertEqual(again.returncode, 1)
-        self.assertIn("already_claimed", again.stderr)
-        self.assertEqual(path.read_bytes(), before)
-        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 8, "post": 1, "readback": 1})
-        print("  합성 HTTP: 수집=1, LLM=8, 승인 POST=1, GET 재조회=1; 동일 payload·중복 차단 확인")
 
-    def test_tampered_candidate_cannot_be_shown_or_sent(self):
-        path, manifest = self.prepared()
-        digest = manifest["sha256"]
-        manifest["payload"]["embeds"][1]["description"] = "승인하지 않은 변조 내용"
-        path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
-        for args in (("--show-prepared", manifest["run_id"]),
-                     ("--send-prepared", manifest["run_id"], "--confirm-hash", digest)):
+    def test_approval_commands_are_gone(self):
+        for args in (("--publish",), ("--send-prepared", "x"), ("--confirm-hash", "0" * 64)):
             with self.subTest(args=args):
                 result = self.cli(*args)
-                self.assertEqual(result.returncode, 1)
-                self.assertIn("hash_mismatch", result.stderr)
-        self.assertFalse(path.with_name(manifest["run_id"] + ".claim.json").exists())
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("unrecognized arguments", result.stderr)
+        self.assertEqual(self.service.counts(), {"feed": 0, "llm": 0, "post": 0, "readback": 0})
+
+    def test_missing_webhook_stops_before_feed_and_model_calls(self):
+        (self.root / ".env").write_text("SYNTHETIC_API_KEY=dummy-local-test-only\n", encoding="utf-8")
+        result = self.cli()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("webhook_not_configured", result.stderr)
+        self.assertEqual(self.service.counts(), {"feed": 0, "llm": 0, "post": 0, "readback": 0})
+        self.assertFalse((self.root / "store/cache/publications").exists())
+
+    def test_tampered_candidate_cannot_be_shown(self):
+        path, manifest = self.prepared()
+        manifest["payload"]["embeds"][1]["description"] = "승인하지 않은 변조 내용"
+        path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+        result = self.cli("--show-prepared", manifest["run_id"])
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("hash_mismatch", result.stderr)
         self.assertEqual(self.service.counts(), {"feed": 1, "llm": 8, "post": 0, "readback": 0})
 
     def budget_used(self):

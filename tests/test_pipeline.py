@@ -6,9 +6,12 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from graph import Pipeline, Verdict, Problem, initial_state
+from 발행승인 import PublicationError, load_publication
 from tests.support import (NOW, SRC, FakeHttp, FakeLLM, FakePublisher, FakeRobots, LLMError, atom, long_body,
                            make_settings, tmp_metrics)
 
@@ -19,13 +22,14 @@ def feed_of(n: int, *, body_chars: int = 700) -> bytes:
 
 
 class PipelineTests(unittest.TestCase):
-    def run_pipeline(self, feed: bytes | None, llm: FakeLLM, *, publisher=None, **select):
+    def run_pipeline(self, feed: bytes | None, llm: FakeLLM, *, publisher=None, send: bool = True, **select):
         metrics, path = tmp_metrics()
         http = FakeHttp({SRC["url"]: feed} if feed is not None else {})
         pub = publisher or FakePublisher()
+        self.store = Path(tempfile.mkdtemp())               # 준비본은 실제 store/ 가 아닌 임시 폴더에만 쓴다
         pipe = Pipeline(make_settings(**select), llm=llm, http=http, robots=FakeRobots(), metrics=metrics,
-                        publisher=pub, now_fn=lambda: NOW)
-        final = pipe.build().invoke(initial_state("test-run", 48), config={"max_concurrency": 4})
+                        publisher=pub, store=self.store, now_fn=lambda: NOW)
+        final = pipe.build().invoke(initial_state("test-run", 48, send=send), config={"max_concurrency": 4})
         events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
         return final, events, pub
 
@@ -39,8 +43,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(final["published"]["status"], "sent")
         self.assertEqual(len(pub.embeds), 5)                               # 머리 카드 + 기사 4건
         stages = [e["stage"] for e in events]
-        for stage in ("collect", "select_prelim", "select_final", "report", "verify", "publish"):
+        for stage in ("collect", "select_prelim", "select_final", "report", "verify",
+                      "publication_prepared", "publication_sent"):
             self.assertIn(stage, stages)
+        self.assertNotIn("publish", stages)                                # 예전 dry-run 전용 이벤트는 사라졌다
         self.assertEqual(stages.count("select_prelim"), 2)                 # 묶음마다 한 줄
         final_ev = next(e for e in events if e["stage"] == "select_final")
         self.assertEqual(len(final_ev["detail"]), 4)                       # 예선 통과 4건 각각의 본선 결과가 기록됨
@@ -116,6 +122,50 @@ class PipelineTests(unittest.TestCase):
         final, events, _ = self.run_pipeline(feed_of(4), FakeLLM(handler), max_per_source=10)
         self.assertEqual(len(final["picked"]), 4)                           # 모델이 실패해도 최신순으로 대체해 계속 간다
         self.assertTrue(next(e for e in events if e["stage"] == "select_prelim")["fallback"])
+
+    # ── 발송 노드 통합 (명세서 11절) ─────────────────────────────────────────
+    def test_graph_runs_straight_through_to_send_without_a_human_step(self):
+        metrics, _ = tmp_metrics()
+        pipe = Pipeline(make_settings(), llm=FakeLLM(), http=FakeHttp(), robots=FakeRobots(), metrics=metrics,
+                        publisher=FakePublisher(), store=Path(tempfile.mkdtemp()), now_fn=lambda: NOW)
+        nodes = set(pipe.build().get_graph().nodes) - {"__start__", "__end__"}
+        self.assertEqual(nodes, {"collect", "select", "report", "verify", "prepare_publication", "send_publication"})
+
+    def test_sent_content_is_the_saved_prepared_content(self):
+        final, events, pub = self.run_pipeline(feed_of(3), FakeLLM())
+        manifest = load_publication(self.store, "test-run")                # 해시·형식까지 검증하며 다시 읽는다
+        self.assertEqual(pub.calls, 1)                                      # 전송은 정확히 1회
+        self.assertEqual(pub.embeds, manifest["payload"]["embeds"])         # 보낸 것 = 저장한 것
+        self.assertEqual(final["published"]["sha256"], manifest["sha256"])
+        self.assertEqual(final["published"]["status"], "sent")
+        self.assertEqual(final["published"]["readback"], {"status": "verified"})
+        self.assertTrue((self.store / "cache" / "publications" / "test-run.receipt.json").is_file())
+
+    def test_dry_run_saves_prepared_content_but_never_sends(self):
+        final, events, pub = self.run_pipeline(feed_of(3), FakeLLM(), send=False)
+        self.assertEqual(pub.calls, 0)
+        self.assertEqual(final["published"]["status"], "prepared")
+        self.assertEqual(load_publication(self.store, "test-run")["sha256"], final["published"]["sha256"])
+        stages = [e["stage"] for e in events]
+        self.assertIn("publication_prepared", stages)
+        self.assertNotIn("publication_sent", stages)
+        self.assertFalse((self.store / "cache" / "publications" / "test-run.claim.json").exists())
+
+    def test_send_failure_is_recorded_and_not_retried(self):
+        final, events, pub = self.run_pipeline(feed_of(3), FakeLLM(), publisher=FakePublisher(status="failed"))
+        self.assertEqual(final["published"]["status"], "failed")
+        self.assertEqual(final["published"]["readback"], {"status": "unavailable"})
+        self.assertEqual(pub.calls, 1)                                      # 실패해도 자동 재발송하지 않는다
+        sent = next(e for e in events if e["stage"] == "publication_sent")
+        self.assertEqual(sent["status"], "failed")
+
+    def test_publication_nodes_refuse_to_run_without_a_store(self):
+        metrics, _ = tmp_metrics()
+        pipe = Pipeline(make_settings(), llm=None, http=None, robots=None, metrics=metrics, publisher=FakePublisher())
+        with self.assertRaisesRegex(PublicationError, "store_required"):
+            pipe.prepare_publication({"run_id": "no-store", "verified": []})
+        with self.assertRaisesRegex(PublicationError, "store_required"):
+            pipe.send_publication({"run_id": "no-store", "published": {"sha256": "0" * 64}})
 
 
 if __name__ == "__main__":
