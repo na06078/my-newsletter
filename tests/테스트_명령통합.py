@@ -132,7 +132,8 @@ class SyntheticService:
 
 class CommandHTTPIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix="newsletter-cli-", dir=os.environ["TMPDIR"])
+        # TMPDIR 가 없으면(대부분의 Windows 셸) tempfile 이 시스템 기본 임시 폴더를 쓴다.
+        self.temp = tempfile.TemporaryDirectory(prefix="newsletter-cli-", dir=os.environ.get("TMPDIR"))
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         original = Path(__file__).resolve().parents[1]
