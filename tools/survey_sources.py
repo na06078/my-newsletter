@@ -274,18 +274,23 @@ def main() -> None:
     robots.http = http                       # 요청 횟수를 한 곳에서 센다
     results = []
     for cand in candidates:
+        measured_at = datetime.now(timezone.utc)
         try:
-            results.append(survey_one(http, robots, cand, keywords, excluded_hosts, now))
+            results.append(survey_one(http, robots, cand, keywords, excluded_hosts, measured_at))
         except Exception:                    # 한 후보의 오류가 전체 실측을 멈추지 않게 한다
             results.append({**{k: cand[k] for k in ("id", "name", "route", "tier", "lang", "url")},
                             "parse_ok": False, "gates": {"G1": False, "G2": False, "G3": False},
                             "error": traceback.format_exc(limit=2)[-400:]})
+        results[-1]["surveyed_at_utc"] = measured_at.isoformat(timespec="seconds")
+        results[-1]["surveyed_at_kst"] = measured_at.astimezone(KST).isoformat(timespec="seconds")
     print_table(results)
 
     merged = {}
     if args.only and OUTPUT_FILE.exists():
         previous = json.loads(OUTPUT_FILE.read_text(encoding="utf-8"))
-        merged = {r["id"]: r for r in previous.get("sources", [])}
+        merged = {r["id"]: {"surveyed_at_utc": previous.get("surveyed_at_utc"),
+                            "surveyed_at_kst": previous.get("surveyed_at_kst"), **r}
+                  for r in previous.get("sources", [])}
     merged.update({r["id"]: r for r in results})
     payload = {
         "surveyed_at_utc": now.isoformat(timespec="seconds"),

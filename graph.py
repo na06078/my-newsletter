@@ -343,7 +343,8 @@ class Pipeline:
         inline = item.get("inline_body") or ""
         if len(inline) >= cc["min_body_chars"]:
             return inline[:cc["body_max_chars"]], "inline", {}
-        got = fetch_body(self.http, self.robots, item["url"], cc["body_max_chars"])
+        got = fetch_body(self.http, self.robots, item["url"], cc["body_max_chars"],
+                         excluded_hosts=cc.get("excluded_hosts", []))
         return got["text"], "page", {"http_status": got["status"], "robots": got["robots"]}
 
     def report(self, s: ReportIn) -> dict:
@@ -400,7 +401,8 @@ class Pipeline:
                     problems = [{"claim": "", "kind": "other", "note": "검수자가 불합격만 표시했고 사유를 적지 않음"}]
             except LLMError as exc:
                 error = str(exc)[:160]                # 검수를 못 했으면 내보내지 않는다 (실패 시 닫힘)
-        ok = not rule_problems and judge_ok is True
+        # 구조화 응답도 필드 간 일관성을 보장하지 않는다. 문제가 보고됐으면 긍정 플래그만 믿지 않는다.
+        ok = not rule_problems and judge_ok is True and not problems
         rec = {"article_id": d["article_id"], "attempt": d["attempt"], "ok": ok, "rule_problems": rule_problems,
                "number_flags": flags, "judge_ok": judge_ok, "problems": problems, "error": error,
                "retryable": error is None}

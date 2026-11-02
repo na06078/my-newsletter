@@ -27,15 +27,15 @@ def render() -> str:
     decisions = yaml.safe_load(DECISIONS.read_text(encoding="utf-8"))
     lines = [f"실측 시각 {survey['surveyed_at_kst']} · 요청 {survey['requests_made_this_run']}건 · 본문 기준 {survey['min_body_chars']}자 · "
              f"소스당 본문 표본 {survey['body_samples']}건 · User-Agent `{survey['user_agent']}`", "",
-             "| 소스 | 경로·tier | HTTP | 항목 | 24h/72h/7d | 최신(h) | 본문 | robots | 키워드 | 관문 | 판정 | 근거 |",
-             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| 소스 | 측정 시각(KST) | 경로·tier | HTTP | 항목 | 24h/72h/7d | 최신(h) | 본문 | robots | 키워드 | 관문 | 판정 | 근거 |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     order = sorted(survey["sources"], key=lambda r: (decisions[r["id"]]["decision"] != "채택", r["id"]))
     for r in order:
         http = (r.get("http") or {}).get("status")
         vol = f"{r.get('items_24h', '-')}/{r.get('items_72h', '-')}/{r.get('items_7d', '-')}"
         newest = r.get("newest_age_h")
         d = decisions[r["id"]]
-        lines.append(f"| {r['name']} | {ROUTE_NAME.get(r['route'], r['route'])} · {r['tier']} | {http if http else '—'} | "
+        lines.append(f"| {r['name']} | {r.get('surveyed_at_kst') or survey['surveyed_at_kst']} | {ROUTE_NAME.get(r['route'], r['route'])} · {r['tier']} | {http if http else '—'} | "
                      f"{r.get('entries', '—')} | {vol} | {newest if newest is not None else '—'} | {r.get('body_ok', '—')} | "
                      f"{str(r.get('robots_feed'))[:11]} | {r.get('keyword_hit_7d') if r.get('keyword_hit_7d') is not None else '—'} | "
                      f"{gate(r)} | **{d['decision']}** | {d['reason']} |")

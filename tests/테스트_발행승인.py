@@ -99,6 +99,53 @@ class FrozenTests(unittest.TestCase):
         self.assertEqual(receipt["sha256"], candidate["sha256"])
         self.assertEqual(receipt["result"], result)
 
+    def test_rate_limit_posts_once_without_parsing_untrusted_body_or_sleep(self):
+        from 발행승인 import prepare_publication, publish_prepared
+        candidate = prepare_publication(self.store, "rate-limit", self.embeds)
+        posts, sleeps, gets = [], [], []
+
+        def post(*args, **kwargs):
+            posts.append(copy.deepcopy(kwargs))
+            return Resp(429, payload={"retry_after": 0, "error": AdapterTests.URL}, text=AdapterTests.URL)
+
+        pub = DiscordPublisher(AdapterTests.URL, live=True, post=post,
+                               get=lambda *a, **kw: gets.append(1), sleep=sleeps.append)
+        result = publish_prepared(self.store, "rate-limit", candidate["sha256"], pub)
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(sleeps, [])
+        self.assertEqual(gets, [])
+        self.assertEqual(posts[0]["json"], candidate["payload"])
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["http_status"], 429)
+        self.assertEqual(result["error"], "HTTPError")
+        self.assertEqual(result["send_outcome"], "rejected")
+        self.assertEqual(result["readback"]["status"], "unavailable")
+        self.assertNotIn("SECRET", json.dumps(result))
+        receipt = json.loads((self.store / "cache/publications/rate-limit.receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(receipt["result"], result)
+        with self.assertRaisesRegex(ValueError, "already_claimed"):
+            publish_prepared(self.store, "rate-limit", candidate["sha256"], pub)
+        self.assertEqual(len(posts), 1)
+
+    def test_missing_username_never_verifies_or_resends(self):
+        from 발행승인 import prepare_publication, publish_prepared
+        for n, author in enumerate((None, {}, {"id": "321"}, {"username": None}, {"username": ""})):
+            with self.subTest(author=author):
+                run_id = f"missing-author-{n}"
+                candidate = prepare_publication(self.store, run_id, self.embeds)
+                message = {"id": "99", "embeds": copy.deepcopy(self.embeds)}
+                if author is not None:
+                    message["author"] = author
+                pub = self.publisher(readback=Resp(payload=message))
+                result = publish_prepared(self.store, run_id, candidate["sha256"], pub)
+                self.assertEqual(result["readback"]["status"], "mismatch")
+                with self.assertRaisesRegex(ValueError, "already_claimed"):
+                    publish_prepared(self.store, run_id, candidate["sha256"], pub)
+                self.assertEqual(len(self.posts), 1)
+                self.assertEqual(len(self.gets), 1)
+                receipt = json.loads((self.store / f"cache/publications/{run_id}.receipt.json").read_text(encoding="utf-8"))
+                self.assertEqual(receipt["result"], result)
+
     def test_confirmation_and_live_preflight_do_not_burn_claim(self):
         from 발행승인 import prepare_publication, publish_prepared
         candidate = prepare_publication(self.store, "run-1", self.embeds)
@@ -164,7 +211,7 @@ class FrozenTests(unittest.TestCase):
         for field in ("title", "description", "url", "color", "footer"):
             embeds = copy.deepcopy(self.embeds)
             embeds[0][field] = {"text": "다른 출처"} if field == "footer" else (321 if field == "color" else "다른 내용")
-            cases.append((Resp(payload={"id": "99", "embeds": embeds}), "mismatch"))
+            cases.append((Resp(payload={"id": "99", "embeds": embeds, "author": {"username": "편집실"}}), "mismatch"))
         cases.append((Resp(payload={"id": "99", "embeds": self.embeds, "author": {"username": "다른 편집자"}}), "mismatch"))
         cases.append((Resp(404, text=AdapterTests.URL), "failed"))
         for n, (response, expected) in enumerate(cases):

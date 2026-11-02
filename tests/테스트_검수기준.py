@@ -8,6 +8,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from graph import Pipeline, Verdict, Problem
 from metrics import Metrics
@@ -47,6 +48,24 @@ class ReviewCriteriaTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertFalse(result["judge_ok"])
         self.assertEqual(result["problems"][0]["kind"], "unsupported")
+
+    def test_positive_flag_with_reported_problem_is_not_a_pass(self):
+        def handler(*args):
+            return Verdict(ok=True, problems=[Problem(claim="새로운 효과", kind="unsupported", note="원문에 없는 효과")])
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.pipeline(handler, tmp).check_draft(DRAFT)
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["judge_ok"])
+        self.assertTrue(result["problems"])
+        self.assertTrue(result["retryable"])
+
+    def test_page_body_receives_configured_exclusion_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pipe = self.pipeline(lambda *args: None, tmp)
+            pipe.cfg["collect"]["excluded_hosts"] = ["blocked.example"]
+            with patch("graph.fetch_body", return_value={"text": "본문", "status": 200, "robots": "allowed"}) as fetch:
+                pipe._body({"url": "https://allowed.example/article", "inline_body": ""})
+        self.assertEqual(fetch.call_args.kwargs.get("excluded_hosts"), ["blocked.example"])
 
     def test_control_characters_and_unrendered_tex_are_rejected_before_model(self):
         for artifact in (chr(9), chr(92) + "textit{method}", chr(92) + "method"):

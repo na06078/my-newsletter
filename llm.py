@@ -9,7 +9,7 @@ import time
 
 import openai
 from openai import OpenAI
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from pathlib import Path
 from contextvars import ContextVar
 
@@ -82,7 +82,7 @@ class LLM:
                     raise
         except _BudgetAbort as exc:
             raise exc.error from None
-        except openai.OpenAIError as exc:
+        except (openai.OpenAIError, ValidationError) as exc:
             self._log(stage, model, None, started, error=type(exc).__name__)
             # 제공자 예외 본문/URL에는 인증 정보가 섞일 수 있으므로 내보내지 않는다.
             raise LLMError(type(exc).__name__) from None

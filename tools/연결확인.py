@@ -49,11 +49,26 @@ def check_connection(settings, *, llm_factory=None):
         if llm is not None:
             try:
                 result["budget_after"] = llm.budget.snapshot()
+            except Exception as exc:
+                result["status"] = "error"
+                result["budget_after_error"] = type(exc).__name__
             finally:
                 close = getattr(getattr(llm, "client", None), "close", None)
                 if close:
-                    close()
-    events = [json.loads(line) for line in metrics.path.read_text(encoding="utf-8").splitlines() if line.strip()]
+                    try:
+                        close()
+                    except Exception as exc:
+                        result["status"] = "error"
+                        result["close_error"] = type(exc).__name__
+    events = []
+    try:
+        events = [json.loads(line) for line in metrics.path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if any(not isinstance(row, dict) for row in events):
+            raise ValueError("invalid_metric_record")
+    except (OSError, ValueError, UnicodeError) as exc:
+        result["status"] = "error"
+        result["metrics_error"] = type(exc).__name__
+        events = []
     calls = [row for row in events if row.get("run_id") == run_id and row.get("stage") == "llm_call"]
     if calls:
         result["observed_model"] = calls[-1].get("model")

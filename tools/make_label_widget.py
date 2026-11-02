@@ -11,6 +11,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
+import secrets
+import time
+from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
 
@@ -33,10 +37,10 @@ TEMPLATE = r"""<!doctype html>
   .opts { display: flex; gap: 6px; }
   .opts button { padding: 4px 14px; border-radius: 999px; border: 1px solid var(--border);
                  background: transparent; color: var(--foreground); cursor: pointer; font-size: 13px; }
-  .opts button.on { background: var(--accent); color: var(--accent-foreground, #fff); border-color: var(--accent); }
+  .opts button.on { background: var(--accent, #0b6e77); color: var(--accent-foreground, #fff); border-color: var(--accent, #0b6e77); }
   .nav button, .submit { padding: 6px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--card);
                          color: var(--foreground); cursor: pointer; font-size: 13px; }
-  .submit { background: var(--accent); color: var(--accent-foreground, #fff); border-color: var(--accent); font-weight: 600; }
+  .submit { background: var(--accent, #0b6e77); color: var(--accent-foreground, #fff); border-color: var(--accent, #0b6e77); font-weight: 600; }
   button:disabled { opacity: .45; cursor: not-allowed; }
   textarea { width: 100%; height: 90px; margin-top: 8px; font-size: 12px; }
 </style></head>
@@ -110,7 +114,7 @@ function submit() {
   status.textContent = "저장 중...";
   // 대화창 밖에서 열었을 때: 이 PC 안(127.0.0.1)의 임시 수신기로만 보낸다
   fetch(ENDPOINT, {method: "POST", headers: {"Content-Type": "text/plain;charset=UTF-8"},
-                   body: JSON.stringify({snapshot: DATA.snapshot, labels: labels})})
+                   body: JSON.stringify({snapshot: DATA.snapshot, labels: labels, session_id: DATA.session_id, token: DATA.token})})
     .then(r => r.json())
     .then(j => {
       if (!j.ok) throw new Error(j.error || "저장 실패");
@@ -125,6 +129,8 @@ if (!(window.hermes && window.hermes.send) && Object.keys(labels).length >= 25 &
 
 
 def build(out: Path) -> None:
+    if out.exists():
+        raise FileExistsError("기존 위젯을 보존합니다. 새 HTML 경로를 지정하세요.")
     snap = json.loads(SRC.read_text(encoding="utf-8"))
     taken_at = datetime.fromisoformat(snap["snapshot_at_kst"])
     items = []
@@ -135,9 +141,20 @@ def build(out: Path) -> None:
             age = f"{int(hours)}시간 전" if hours < 48 else f"{int(hours // 24)}일 전"
         items.append({"id": it["id"], "title": it["title"], "url": it["url"], "source": it["source"],
                       "age": age, "summary": it["summary"][:220]})
-    data = json.dumps({"snapshot": snap["snapshot_at_kst"], "items": items}, ensure_ascii=False).replace("</", "<\\/")
+    session_id = uuid4().hex
+    now = time.time()
+    session = {"session_id": session_id, "token": secrets.token_urlsafe(32),
+               "snapshot": snap["snapshot_at_kst"], "created_at": now, "expires_at": now + 1800,
+               "candidates_sha256": hashlib.sha256(json.dumps(snap, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()}
+    session_dir = ROOT / "store" / "cache" / "label_sessions"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    with (session_dir / (session_id + ".json")).open("x", encoding="utf-8") as stream:
+        json.dump(session, stream, ensure_ascii=False)
+    data = json.dumps({"snapshot": snap["snapshot_at_kst"], "items": items,
+                       "session_id": session_id, "token": session["token"]}, ensure_ascii=False).replace("</", "<\\/")
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(TEMPLATE.replace("/*DATA*/", data), encoding="utf-8")
+    with out.open("x", encoding="utf-8") as stream:
+        stream.write(TEMPLATE.replace("/*DATA*/", data))
     print(f"위젯 저장: {out} ({out.stat().st_size:,} bytes, 표본 {len(items)}건)")
 
 

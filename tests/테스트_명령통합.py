@@ -35,6 +35,13 @@ class SyntheticService:
         self.errors = []
         self.lock = threading.Lock()
         self.payload = None
+        self.report_content = None
+        self.judge_problems = []
+        self.webhook_status = 200
+        self.omit_author = False
+        self.inline_body = True
+        self.robots_status = 404
+        self.blocked_hits = 0
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -61,12 +68,24 @@ class SyntheticService:
                         entries.append(f'<entry><id>{topic}</id><title>{topic} 소식</title>'
                                        f'<link href="{owner.base}/articles/{topic}"/>'
                                        f'<updated>{when}</updated><summary>{topic} 자료 공개</summary>'
-                                       f'<content type="text">{escape(body)}</content></entry>')
+                                       f'<content type="text">{escape(body) if owner.inline_body else ""}</content></entry>')
                     self.reply(('<feed xmlns="http://www.w3.org/2005/Atom"><title>합성 피드</title>'
                                 + ''.join(entries) + '</feed>').encode("utf-8"), "application/atom+xml; charset=utf-8")
+                elif path == "/robots.txt":
+                    self.reply(b"", "text/plain", status=owner.robots_status)
+                elif path.startswith("/articles/"):
+                    self.send_response(302)
+                    self.send_header("Location", f"http://localhost:{owner.server.server_port}/blocked")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                elif path == "/blocked":
+                    owner.blocked_hits += 1
+                    self.reply(b"should not be fetched", "text/html")
                 elif path == "/incoming/messages/123456" and owner.payload is not None:
-                    self.reply({"id": "123456", "embeds": owner.payload["embeds"],
-                                "author": {"username": owner.payload["username"]}})
+                    message = {"id": "123456", "embeds": owner.payload["embeds"]}
+                    if not owner.omit_author:
+                        message["author"] = {"username": owner.payload["username"]}
+                    self.reply(message)
                 else:
                     owner.errors.append("unexpected GET " + path)
                     self.reply({"error": "unexpected route"}, status=404)
@@ -79,7 +98,8 @@ class SyntheticService:
                         owner.events.append(("POST", self.path, data))
                     if path == "/incoming":
                         owner.payload = data
-                        self.reply({"id": "123456"})
+                        self.reply({"retry_after": 0} if owner.webhook_status == 429 else {"id": "123456"},
+                                   status=owner.webhook_status)
                         return
                     if path != "/v1/chat/completions":
                         raise ValueError("unexpected POST route")
@@ -99,12 +119,14 @@ class SyntheticService:
                                   "why": "실습 절차를 확인하는 데 쓸 수 있습니다."}
                     elif "뉴스레터 사실 검수자" in system:
                         assert "[원문]" in user and "[초안]" in user
-                        result = {"ok": True, "problems": []}
+                        result = {"ok": True, "problems": owner.judge_problems}
                     else:
                         raise ValueError("unknown production prompt")
+                    content = (owner.report_content if "뉴스레터 기자" in system and owner.report_content is not None
+                               else json.dumps(result, ensure_ascii=False))
                     self.reply({"id": "chatcmpl-synthetic", "object": "chat.completion", "created": 1,
                                 "model": data["model"], "choices": [{"index": 0, "finish_reason": "stop",
-                                "message": {"role": "assistant", "content": json.dumps(result, ensure_ascii=False)}}],
+                                "message": {"role": "assistant", "content": content}}],
                                 "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}})
                 except Exception as exc:
                     owner.errors.append(type(exc).__name__ + ": " + str(exc))
@@ -232,6 +254,67 @@ class CommandHTTPIntegrationTests(unittest.TestCase):
                     self.assertIn(embed[key], show.stdout)
         self.assertFalse(path.with_name(manifest["run_id"] + ".claim.json").exists())
         self.assertEqual(self.service.counts(), {"feed": 1, "llm": 8, "post": 0, "readback": 0})
+
+    def test_invalid_model_schema_skips_articles_and_finishes_the_cli(self):
+        self.service.report_content = '{"headline": 9, "summary": "SENSITIVE-INPUT-SENTINEL", "why": null}'
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 5, "post": 1, "readback": 1})
+        self.assertEqual(len(self.service.payload["embeds"]), 1)
+        self.assertIn("검수를 통과하지 못해", self.service.payload["embeds"][0]["description"])
+        self.assertNotIn("SENSITIVE-INPUT-SENTINEL", result.stdout + result.stderr)
+        records = (self.root / "store/metrics.jsonl").read_text(encoding="utf-8")
+        self.assertNotIn("SENSITIVE-INPUT-SENTINEL", records)
+
+    def test_positive_judge_with_problems_cannot_publish_articles(self):
+        self.service.judge_problems = [{"claim": "잘못된 주장", "kind": "unsupported", "note": "본문에 없음"}]
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 14, "post": 1, "readback": 1})
+        self.assertEqual(len(self.service.payload["embeds"]), 1)
+        self.assertIn("검수 통과 0", self.service.payload["embeds"][0]["description"])
+        self.assertIn("검수를 통과하지 못해", result.stdout)
+
+    def test_rate_limit_is_one_post_and_exit_code_2(self):
+        self.service.webhook_status = 429
+        result = self.cli()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 8, "post": 1, "readback": 0})
+        receipts = list((self.root / "store/cache/publications").glob("*.receipt.json"))
+        self.assertEqual(len(receipts), 1)
+        receipt = json.loads(receipts[0].read_text(encoding="utf-8"))["result"]
+        self.assertEqual(receipt["send_outcome"], "rejected")
+        self.assertEqual(receipt["http_status"], 429)
+
+    def test_readback_without_author_is_not_success(self):
+        self.service.omit_author = True
+        result = self.cli()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 8, "post": 1, "readback": 1})
+        self.assertIn("재조회: mismatch", result.stdout)
+
+    def test_excluded_redirect_body_is_never_requested_by_cli(self):
+        self.service.inline_body = False
+        cfg_path = self.root / "config.yaml"
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        cfg["collect"]["excluded_hosts"] = ["localhost"]
+        cfg_path.write_text(json.dumps(cfg, ensure_ascii=False), encoding="utf-8")
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.service.blocked_hits, 0)
+        self.assertTrue(any(p.startswith("/articles/") for method, p, _ in self.service.events if method == "GET"))
+        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 2, "post": 1, "readback": 1})
+        self.assertEqual(len(self.service.payload["embeds"]), 1)
+
+    def test_unreachable_robots_prevents_article_fetch_by_cli(self):
+        self.service.inline_body = False
+        self.service.robots_status = 503
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(any(p == "/robots.txt" for method, p, _ in self.service.events if method == "GET"))
+        self.assertFalse(any(p.startswith("/articles/") for method, p, _ in self.service.events if method == "GET"))
+        self.assertEqual(self.service.blocked_hits, 0)
+        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 2, "post": 1, "readback": 1})
 
     def test_approval_commands_are_gone(self):
         for args in (("--publish",), ("--send-prepared", "x"), ("--confirm-hash", "0" * 64)):

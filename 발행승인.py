@@ -183,7 +183,7 @@ def publish_prepared(store, run_id, confirmed_sha256, publisher):
             message = read["message"]
             matches = _supplied_fields_match(payload["embeds"], message.get("embeds"))
             username = message.get("author", {}).get("username", message.get("username"))
-            matches = matches and (username is None or username == payload["username"])
+            matches = matches and username == payload["username"]
             result["readback"] = {"status": "verified" if matches else "mismatch"}
         else:
             result["readback"] = {"status": "failed"}

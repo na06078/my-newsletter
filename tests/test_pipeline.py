@@ -55,7 +55,8 @@ class PipelineTests(unittest.TestCase):
     def test_failed_draft_is_regenerated_once_then_passes(self):
         def handler(stage, system, user, schema):
             if stage == "verify":
-                return Verdict(ok=("다시 쓴" in user), problems=[Problem(claim="첫 문장", kind="unsupported", note="원문에 없음")])
+                passed = "다시 쓴" in user
+                return Verdict(ok=passed, problems=[] if passed else [Problem(claim="첫 문장", kind="unsupported", note="원문에 없음")])
             return FakeLLM.default(stage, system, user, schema)
         final, events, _ = self.run_pipeline(feed_of(3), FakeLLM(handler))
         self.assertEqual(len(final["verified"]), 3)
@@ -74,6 +75,19 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(final["rejected"][0]["attempts"], 2)               # 처음 + 재생성 1회 = 2번 시도 후 스킵
         self.assertEqual(final["published"]["status"], "sent")             # 서비스는 멈추지 않고 '조용한 날' 카드를 보낸다
         self.assertIn("검수를 통과하지 못해", pub.embeds[0]["description"])
+
+    def test_contradictory_positive_judge_is_regenerated_before_sending(self):
+        def handler(stage, system, user, schema):
+            if stage == "verify":
+                retry = "다시 쓴" in user
+                return Verdict(ok=True, problems=[] if retry else [Problem(claim="초안", kind="unsupported", note="원문 근거 부족")])
+            return FakeLLM.default(stage, system, user, schema)
+        final, events, pub = self.run_pipeline(feed_of(3), FakeLLM(handler))
+        self.assertEqual(len(final["verified"]), 3)
+        self.assertTrue(all(v["attempt"] == 1 for v in final["verified"]))
+        self.assertEqual(sum(e["stage"] == "report" for e in events), 6)
+        self.assertEqual(pub.calls, 1)
+        self.assertTrue(all("다시 쓴" in e["title"] for e in pub.embeds[1:]))
 
     def test_judge_outage_fails_closed_without_retry(self):
         def handler(stage, system, user, schema):

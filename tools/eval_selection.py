@@ -17,6 +17,7 @@ import json
 import random
 import statistics
 import sys
+from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -74,11 +75,18 @@ def main() -> int:
     if not (CANDIDATES.exists() and LABELS.exists()):
         print("eval/candidates.json 과 eval/labels.json 이 필요합니다.", file=sys.stderr)
         return 1
-    cand = json.loads(CANDIDATES.read_text(encoding="utf-8"))
-    label_doc = json.loads(LABELS.read_text(encoding="utf-8"))
-    if label_doc.get("snapshot") != cand["snapshot_at_kst"]:
-        print("경고: 라벨과 후보의 표본 시각이 다릅니다.", file=sys.stderr)
-    items, labels = cand["items"], {k: int(v) for k, v in label_doc["labels"].items()}
+    from tools.label_receiver import validate, unique_object
+    try:
+        cand = json.loads(CANDIDATES.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+        label_doc = json.loads(LABELS.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+    except (ValueError, OSError):
+        print("표본 또는 라벨 JSON 형식이 잘못되었습니다", file=sys.stderr)
+        return 1
+    labels, error = validate(label_doc, cand)
+    if error:
+        print(error, file=sys.stderr)
+        return 1
+    items = cand["items"]
     items = [i for i in items if i["id"] in labels]
 
     from config import load_settings
@@ -87,7 +95,8 @@ def main() -> int:
     from metrics import Metrics
 
     settings = load_settings()
-    run_id = "eval-select-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = "selection_eval-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex
+    out = OUT.with_name(run_id + ".json")
     metrics = Metrics(ROOT / settings["cfg"]["run"]["store_dir"] / "metrics.jsonl", run_id)
     metrics.emit("run_start", mode="eval_selection", items=len(items), repeats=args.repeats,
                  importance=settings["audience"]["importance"].strip(),
@@ -105,14 +114,15 @@ def main() -> int:
         print(f"반복 {k + 1}: 정밀도 {result['precision']} (상한 {result['max_precision']}, 무작위 {result['random_baseline']})"
               f" · 무관 {result['irrelevant_picked']}건 · 예선 재현율 {result['survivor_recall']}")
     summary = summarize(runs)
-    payload = {"evaluated_at_kst": datetime.now(KST).isoformat(timespec="seconds"),
+    payload = {"snapshot": cand["snapshot_at_kst"], "evaluated_at_kst": datetime.now(KST).isoformat(timespec="seconds"),
                "run_id": run_id, "items": len(items), "label_counts": {LABEL_NAME[v]: sum(1 for x in labels.values() if x == v) for v in (2, 1, 0)},
                "importance": settings["audience"]["importance"].strip(), "audience_status": settings["audience"].get("status"),
                "llm_calls": llm.calls, "summary": summary, "runs": runs,
                "caveat": "표본 30건의 동작 확인이며 통계적 입증이 아니다. 같은 표본에서 기준을 고쳤다면 그 표본에 맞춰진 결과다."}
-    OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    with out.open("x", encoding="utf-8") as stream:
+        json.dump(payload, stream, ensure_ascii=False, indent=2)
     metrics.emit("eval_selection", **{"summary": summary, "label_counts": payload["label_counts"], "llm_calls": llm.calls})
-    print("\n요약:", summary, f"\n모델 호출 {llm.calls}회 · 저장: {OUT.relative_to(ROOT)}")
+    print("\n요약:", summary, f"\n모델 호출 {llm.calls}회 · 저장: {out.relative_to(ROOT)}")
     return 0
 
 

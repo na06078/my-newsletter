@@ -36,7 +36,7 @@ class FakeHttp:
     def __init__(self, routes: dict[str, bytes] | None = None) -> None:
         self.routes, self.count, self.user_agent = routes or {}, 0, "fake"
 
-    def get(self, url: str) -> dict:
+    def get(self, url: str, *, excluded_hosts=(), robots=None, max_bytes=None, content_types=None) -> dict:
         self.count += 1
         if url in self.routes:
             return {"status": 200, "content": self.routes[url], "final_url": url, "content_type": "", "error": None, "ms": 1}

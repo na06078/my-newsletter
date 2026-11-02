@@ -17,3 +17,6 @@ store/cache/
 
 # 프로세스 간 실제 API 요청 예약 장부 — 재시작해도 보존하는 로컬 상태
 store/호출예산.sqlite3*
+
+# 라벨 위젯의 기본 생성본에는 일회성 로컬 제출 토큰이 들어간다
+eval/label_widget.html

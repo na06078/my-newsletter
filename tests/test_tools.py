@@ -40,7 +40,7 @@ class MutationTests(unittest.TestCase):
             return {"ok": not caught, "rule_problems": [], "judge_ok": not caught, "error": None, "problems": []}
         rows = nc.run_control([DRAFT], fake_check)
         s = nc.summarize(rows)
-        self.assertEqual(s["control"], {"tried": 1, "false_positives": 0})
+        self.assertEqual(s["control"], {"tried": 1, "evaluated": 1, "errors": 0, "false_positives": 0})
         self.assertEqual((s["fabricate"]["caught"], s["wrong_entity"]["caught"], s["overstate"]["caught"]), (1, 1, 1))
         self.assertEqual((s["number"]["tried"], s["number"]["caught"]), (1, 0))   # 놓친 것은 놓쳤다고 센다
         self.assertEqual(s["number_flag_by_code"], {"tried": 1, "flagged": 1})    # 대신 코드의 숫자 대조는 잡았다

@@ -11,7 +11,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 from html import unescape
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit, unquote
 
 import feedparser
 
@@ -38,8 +38,10 @@ def article_id(url: str) -> str:
 
 
 def host_excluded(url: str, excluded_hosts: list[str]) -> bool:
-    host = urlsplit(url).netloc.lower()
-    return any(host == h or host.endswith("." + h) for h in excluded_hosts)
+    # 전송 계층이 ASCII 호스트의 percent-encoding을 풀기 전에 같은 이름으로 비교한다.
+    host = unquote(urlsplit(url).hostname or "").lower().rstrip(".")
+    return any(host == h.lower().rstrip(".") or host.endswith("." + h.lower().rstrip("."))
+               for h in excluded_hosts if h.rstrip("."))
 
 
 def _iso(struct_time) -> str | None:
@@ -115,16 +117,16 @@ def collect(collect_cfg: dict, http, now: datetime, hours: int) -> tuple[list[di
     """
     cutoff, upper = now - timedelta(hours=hours), now + FUTURE_TOLERANCE
     excluded, cap = collect_cfg.get("excluded_hosts", []), collect_cfg["per_source_cap"]
-    pooled, stats = [], {}
+    pooled, stats, source_duplicates = [], {}, 0
     for src in collect_cfg["sources"]:
         st = {"status": None, "fetched": 0, "undated": 0, "in_window": 0, "excluded_host": 0,
               "kept": 0, "error": None}
         stats[src["id"]] = st
         fetched = []
         for url in src.get("urls") or [src["url"]]:
-            resp = http.get(url)
+            resp = http.get(url, excluded_hosts=excluded)
             st["status"] = resp["status"]
-            if resp["status"] != 200:
+            if resp["status"] != 200 or resp["error"]:
                 st["error"] = resp["error"] or f"HTTP {resp['status']}"
                 continue
             try:
@@ -145,10 +147,12 @@ def collect(collect_cfg: dict, http, now: datetime, hours: int) -> tuple[list[di
                 continue
             in_window.append(it)
         st["in_window"] = len(in_window)
+        in_window, removed = _dedupe(in_window)
+        source_duplicates += removed
         in_window.sort(key=lambda it: it["published_at"], reverse=True)
         pooled += in_window[:cap]
     kept, dup = _dedupe(pooled)
     for it in kept:
         stats[it["source_id"]]["kept"] += 1
-    stats["_dedupe_removed"] = dup
+    stats["_dedupe_removed"] = source_duplicates + dup
     return kept, stats

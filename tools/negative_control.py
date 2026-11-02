@@ -18,6 +18,7 @@ import argparse
 import json
 import re
 import sys
+from uuid import uuid4
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -83,16 +84,18 @@ def run_control(drafts: list[dict], check, kinds=KINDS) -> list[dict]:
     for d in drafts:
         base = {"article_id": d["article_id"]}
         control = check(d)
-        rows.append({**base, "kind": "control", "ok": control["ok"], "false_positive": not control["ok"]})
+        rows.append({**base, "kind": "control", "ok": control["ok"], "error": control.get("error"),
+                     "false_positive": None if control.get("error") else not control["ok"]})
         for kind in kinds:
             mutated = mutate(d, d["body"], kind)
             if mutated is None:
                 rows.append({**base, "kind": kind, "skipped": True})
                 continue
             result = check(mutated)
-            by = ("rule" if result["rule_problems"] else "error" if result["error"]
-                  else "judge" if result["judge_ok"] is False else "missed")
-            rows.append({**base, "kind": kind, "caught": not result["ok"], "by": by,
+            by = ("error" if result["error"] else "rule" if result["rule_problems"]
+                  else "judge" if not result["ok"] else "missed")
+            rows.append({**base, "kind": kind, "caught": None if result["error"] else not result["ok"],
+                         "error": result.get("error"), "by": by,
                          "code_number_flag": bool(unmatched_numbers(mutated["summary"], d["body"])) if kind == "number" else None,
                          "mutated_summary": mutated["summary"][:300], "judge_problems": result["problems"]})
     return rows
@@ -102,13 +105,16 @@ def summarize(rows: list[dict]) -> dict:
     out = {}
     for kind in KINDS:
         tried = [r for r in rows if r["kind"] == kind and not r.get("skipped")]
-        out[kind] = {"tried": len(tried), "caught": sum(1 for r in tried if r["caught"]),
+        out[kind] = {"tried": len(tried), "evaluated": sum(1 for r in tried if not r.get("error") and r["by"] != "error"),
+                     "caught": sum(1 for r in tried if r["caught"] and not r.get("error") and r["by"] != "error"),
                      "by_judge": sum(1 for r in tried if r["by"] == "judge"),
                      "by_rule": sum(1 for r in tried if r["by"] == "rule"),
                      "errors": sum(1 for r in tried if r["by"] == "error"),
                      "skipped": sum(1 for r in rows if r["kind"] == kind and r.get("skipped"))}
     controls = [r for r in rows if r["kind"] == "control"]
-    out["control"] = {"tried": len(controls), "false_positives": sum(1 for r in controls if r["false_positive"])}
+    out["control"] = {"tried": len(controls), "evaluated": sum(1 for r in controls if not r.get("error")),
+                      "errors": sum(1 for r in controls if r.get("error")),
+                      "false_positives": sum(1 for r in controls if r["false_positive"] and not r.get("error"))}
     flagged = [r for r in rows if r["kind"] == "number" and not r.get("skipped")]
     out["number_flag_by_code"] = {"tried": len(flagged), "flagged": sum(1 for r in flagged if r["code_number_flag"])}
     return out
@@ -141,7 +147,8 @@ def main() -> int:
     from metrics import Metrics
 
     settings = load_settings()
-    run_id = "eval-negctl-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    run_id = "negative_control-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid4().hex
+    out = OUT.with_name(run_id + ".json")
     metrics = Metrics(ROOT / settings["cfg"]["run"]["store_dir"] / "metrics.jsonl", run_id)
     metrics.emit("run_start", mode="negative_control", source_cache=path.name, drafts=len(drafts),
                  models=settings["cfg"]["llm"]["models"])
@@ -152,11 +159,12 @@ def main() -> int:
     payload = {"run_id": run_id, "source_cache": path.name, "drafts": len(drafts), "llm_calls": llm.calls,
                "summary": summary, "rows": rows,
                "caveat": "변형 4종·초안 소수의 시험이다. 잡았다고 모든 환각을 잡는다는 뜻은 아니고, 놓쳤다면 그 유형은 검수가 약하다는 신호다."}
-    OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    with out.open("x", encoding="utf-8") as stream:
+        json.dump(payload, stream, ensure_ascii=False, indent=2)
     metrics.emit("negative_control", summary=summary, llm_calls=llm.calls)
     for kind in (*KINDS, "control"):
         print(f"{kind:<13}{summary[kind]}")
-    print(f"숫자 대조 신호(코드): {summary['number_flag_by_code']}\n모델 호출 {llm.calls}회 · 저장: {OUT.relative_to(ROOT)}")
+    print(f"숫자 대조 신호(코드): {summary['number_flag_by_code']}\n모델 호출 {llm.calls}회 · 저장: {out.relative_to(ROOT)}")
     return 0
 
 

@@ -88,10 +88,6 @@ class DiscordPublisher:
         payload = {"username": username, "embeds": copy.deepcopy(embeds), "allowed_mentions": {"parse": []}}
         try:
             resp = self._send(payload)
-            if resp.status_code == 429:                     # 요청 한도: 알려 준 시간만큼 쉬고 한 번만 다시
-                wait = min(float(resp.json().get("retry_after", 1)), 10)
-                self._sleep(wait)
-                resp = self._send(payload)
         except (requests.RequestException, ValueError) as exc:
             return {**base, "status": "failed", "error": type(exc).__name__}   # 문구에 주소가 섞일 수 있어 종류만
         if resp.status_code in (200, 204):

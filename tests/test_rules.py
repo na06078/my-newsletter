@@ -143,12 +143,15 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual((res["status"], res["error"]), ("failed", "ConnectionError"))
         self.assertNotIn("SECRET", json.dumps(res))                                # 결과에는 새지 않는다
 
-    def test_rate_limit_retries_once(self):
+    def test_rate_limit_does_not_retry_the_publication(self):
         seq = [self.Resp(429, {"retry_after": 0.5}), self.Resp(200, {"id": "1"})]
         slept = []
         pub = DiscordPublisher("https://x/y", live=True, post=lambda *a, **k: seq.pop(0), sleep=slept.append)
-        self.assertEqual(pub.publish([{"title": "t"}])["status"], "sent")
-        self.assertEqual(slept, [0.5])
+        result = pub.publish([{"title": "t"}])
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["http_status"], 429)
+        self.assertEqual(len(seq), 1)
+        self.assertEqual(slept, [])
 
 
 if __name__ == "__main__":
