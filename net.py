@@ -242,34 +242,70 @@ class Robots:
 
     def __init__(self, http: Http) -> None:
         self.http = http
-        # 병렬 워커가 동시에 채워도 같은 값이 다시 들어갈 뿐이라 따로 잠그지 않는다
         self._cache: dict[tuple, tuple] = {}
+        self._cache_guard = threading.Lock()
+        self._key_locks: dict[tuple, threading.Lock] = {}
 
     def verdict(self, url: str) -> str:
         return self._verdict(url, ())
 
     def _verdict(self, url: str, excluded_hosts) -> str:
+        # 공개 verdict도 자체 예산을 갖되, get/fetch_body의 활성 예산은 재사용한다.
+        with self.http._budget() if isinstance(self.http, Http) else nullcontext():
+            try:
+                return self._cached_verdict(url, excluded_hosts)
+            except _DeadlineExceeded:
+                self.http._deadline_expired.set(True)
+                return "unreachable"
+
+    def _cached_verdict(self, url, excluded_hosts):
         parts = urlparse(url)
         origin = f"{parts.scheme}://{parts.netloc}"
         key = (origin, tuple(sorted(excluded_hosts)))
-        if key not in self._cache:
-            # robots=None을 유지: robots 조회에 다시 robots 검사를 적용하지 않는다.
-            resp = self.http.get(f"{origin}/robots.txt", max_bytes=ROBOTS_MAX_BYTES,
-                                 excluded_hosts=excluded_hosts)
-            if resp["error"]:
-                self._cache[key] = (None, "unreachable")
-            elif resp["status"] == 200:
-                parser = robotparser.RobotFileParser()
-                parser.parse(resp["content"].decode("utf-8", "replace").splitlines())
-                self._cache[key] = (parser, "parsed")
-            elif resp["status"] is not None and 400 <= resp["status"] < 500:
-                self._cache[key] = (None, "no_robots")       # 4xx 는 제한 없음 (RFC 9309)
-            else:
-                self._cache[key] = (None, "unreachable")     # 5xx·네트워크 오류는 확인 불가
-        parser, state = self._cache[key]
+        with self._cache_guard:
+            key_lock = self._key_locks.setdefault(key, threading.Lock())
+        if isinstance(self.http, Http):
+            acquired = key_lock.acquire(timeout=self.http._remaining())
+            if not acquired:
+                raise _DeadlineExceeded
+        else:
+            key_lock.acquire()
+        try:
+            if isinstance(self.http, Http):
+                self.http._remaining()
+            with self._cache_guard:
+                cached = self._cache.get(key)
+            if cached is None:
+                cached = self._load(origin, excluded_hosts)
+                if cached is None:
+                    # 소유자의 개인 기한은 사이트 상태가 아니다. 다음 대기자가 재시도한다.
+                    return "unreachable"
+                with self._cache_guard:
+                    self._cache[key] = cached
+        finally:
+            key_lock.release()
+        parser, state = cached
         if state == "parsed":
             return "allowed" if parser.can_fetch(self.http.user_agent, url) else "disallowed"
         return state
+
+    def _load(self, origin, excluded_hosts):
+        # robots=None을 유지: robots 조회에 다시 robots 검사를 적용하지 않는다.
+        resp = self.http.get(f"{origin}/robots.txt", max_bytes=ROBOTS_MAX_BYTES,
+                             excluded_hosts=excluded_hosts)
+        if resp["error"] == "total_deadline_exceeded":
+            if isinstance(self.http, Http):
+                self.http._deadline_expired.set(True)
+            return None
+        if resp["error"]:
+            return (None, "unreachable")
+        if resp["status"] == 200:
+            parser = robotparser.RobotFileParser()
+            parser.parse(resp["content"].decode("utf-8", "replace").splitlines())
+            return (parser, "parsed")
+        if resp["status"] is not None and 400 <= resp["status"] < 500:
+            return (None, "no_robots")       # 4xx 는 제한 없음 (RFC 9309)
+        return (None, "unreachable")         # 5xx·네트워크 오류는 확인 불가
 
 
 def extract_text(content: bytes | str) -> str:

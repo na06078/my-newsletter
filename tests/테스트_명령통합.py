@@ -42,6 +42,9 @@ class SyntheticService:
         self.inline_body = True
         self.robots_status = 404
         self.blocked_hits = 0
+        self.article_redirect = True
+        self.judge_fail_once = False
+        self.judge_attempts = {}
         owner = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -74,6 +77,10 @@ class SyntheticService:
                 elif path == "/robots.txt":
                     self.reply(b"", "text/plain", status=owner.robots_status)
                 elif path.startswith("/articles/"):
+                    if not owner.article_redirect:
+                        body = ("<html><body><article><p>" + "공개된 실습 자료이며 안전한 사용 절차를 설명합니다. " * 60 + "</p></article></body></html>").encode("utf-8")
+                        self.reply(body, "text/html; charset=utf-8")
+                        return
                     self.send_response(302)
                     self.send_header("Location", f"http://localhost:{owner.server.server_port}/blocked")
                     self.send_header("Content-Length", "0")
@@ -120,6 +127,13 @@ class SyntheticService:
                     elif "뉴스레터 사실 검수자" in system:
                         assert "[원문]" in user and "[초안]" in user
                         result = {"ok": True, "problems": owner.judge_problems}
+                        if owner.judge_fail_once:
+                            topic = re.search(r"headline: (도구|학습|검증) 공개 자료 안내", user).group(1)
+                            with owner.lock:
+                                owner.judge_attempts[topic] = owner.judge_attempts.get(topic, 0) + 1
+                                attempt = owner.judge_attempts[topic]
+                            if attempt == 1:
+                                result = {"ok": False, "problems": [{"claim": "초안", "kind": "unsupported", "note": "합성 재작성 경로 확인"}]}
                     else:
                         raise ValueError("unknown production prompt")
                     content = (owner.report_content if "뉴스레터 기자" in system and owner.report_content is not None
@@ -335,6 +349,27 @@ class CommandHTTPIntegrationTests(unittest.TestCase):
         receipt_path = next((self.root / "store/cache/publications").glob("*.receipt.json"))
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
         self.assertEqual(receipt["result"]["status"], "sent")
+
+    def test_regeneration_reuses_page_body_and_single_robots_fetch_in_real_cli(self):
+        self.service.inline_body = False
+        self.service.article_redirect = False
+        self.service.judge_fail_once = True
+        result = self.cli()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 14, "post": 1, "readback": 1})
+        paths = [path for method, path, _ in self.service.events if method == "GET"]
+        self.assertEqual(sum(path.startswith("/articles/") for path in paths), 3)
+        self.assertEqual(paths.count("/robots.txt"), 1)
+        self.assertEqual(self.service.judge_attempts, {"도구": 2, "학습": 2, "검증": 2})
+        cache = next((self.root / "store/cache").glob("*.json"))
+        state = json.loads(cache.read_text(encoding="utf-8"))
+        self.assertEqual(len(state["verified"]), 3)
+        self.assertTrue(all(item["attempt"] == 1 for item in state["verified"]))
+        self.assertEqual(len(self.service.payload["embeds"]), 4)
+        for article_id in {d["article_id"] for d in state["drafted"]}:
+            bodies = [d["body"] for d in state["drafted"] if d["article_id"] == article_id]
+            self.assertEqual(len(bodies), 2)
+            self.assertEqual(bodies[0], bodies[1])
 
     def test_missing_webhook_stops_before_feed_and_model_calls(self):
         (self.root / ".env").write_text("SYNTHETIC_API_KEY=dummy-local-test-only\n", encoding="utf-8")

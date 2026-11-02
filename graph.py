@@ -16,9 +16,11 @@ import re
 import time
 import uuid
 from collections import Counter
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Annotated, Literal, TypedDict
+from threading import Event
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
@@ -32,6 +34,7 @@ from publisher import DiscordPublisher, build_embeds, total_chars
 from 발행승인 import PublicationError, prepare_publication as save_publication, publish_prepared
 
 KST = timezone(timedelta(hours=9))
+DEFAULT_VERIFY_CONCURRENCY = 2
 
 
 # ── 상태(State)와 모델 출력 스키마 ──────────────────────────────────────────
@@ -59,6 +62,9 @@ class ReportIn(TypedDict):
     item: dict
     attempt: int
     feedback: str | None
+    body: NotRequired[str]
+    body_source: NotRequired[str]
+    body_meta: NotRequired[dict]
 
 
 class Pick(BaseModel):
@@ -225,6 +231,10 @@ class Pipeline:
 
     def __init__(self, settings: dict, *, llm, http, robots, metrics, publisher, store=None, now_fn=None) -> None:
         self.cfg, self.audience = settings["cfg"], settings["audience"]
+        workers = self.cfg["verify"].get("max_concurrency", DEFAULT_VERIFY_CONCURRENCY)
+        if type(workers) is not int or not 1 <= workers <= 4:
+            raise ValueError("verify.max_concurrency must be an integer from 1 to 4")
+        self.verify_concurrency = workers
         self.llm, self.http, self.robots, self.metrics, self.publisher = llm, http, robots, metrics, publisher
         self.store = store
         self.now = now_fn or (lambda: datetime.now(timezone.utc))
@@ -379,7 +389,15 @@ class Pipeline:
 
     def report(self, s: ReportIn) -> dict:
         item, attempt, feedback = s["item"], s.get("attempt", 0), s.get("feedback")
-        body, source, meta = self._body(item)
+        supplied = s.get("body")
+        if supplied is not None and not isinstance(supplied, str):
+            raise ValueError("report body must be a string")
+        if supplied:
+            body = supplied[:self.cfg["collect"]["body_max_chars"]]
+            source, meta = s.get("body_source", "page"), s.get("body_meta", {})
+        else:
+            body, source, meta = self._body(item)
+        meta = {key: meta[key] for key in ("http_status", "robots", "body_error") if key in meta}
         if len(body) < self.cfg["collect"]["min_body_chars"]:
             self.metrics.emit("report", article_id=item["id"], attempt=attempt, status="skipped_short_body",
                               body_chars=len(body), body_source=source, **meta)
@@ -400,7 +418,7 @@ class Pipeline:
                           body_source=source, headline=draft.headline.strip(), **meta)
         return {"drafted": [{"article_id": item["id"], "attempt": attempt, "headline": draft.headline.strip(),
                              "summary": draft.summary.strip(), "why": draft.why.strip(), "body": body,
-                             "body_source": source}]}
+                             "body_source": source, "body_meta": meta}]}
 
     # ④ 자동 검수 ------------------------------------------------------------
     def _judge_system(self) -> str:
@@ -444,7 +462,32 @@ class Pipeline:
 
     def verify(self, s: Brief) -> dict:
         rnd = s.get("round", 0)
-        new = [self.check_draft(d) for d in s.get("drafted", []) if d["attempt"] == rnd]
+        current = [d for d in s.get("drafted", []) if d["attempt"] == rnd]
+        workers = self.verify_concurrency
+        new = []
+        aborted = Event()
+
+        def check_current(d):
+            if aborted.is_set():
+                return None
+            try:
+                return self.check_draft(d)
+            except BaseException:
+                aborted.set()
+                raise
+
+        # 한 묶음만 제출하므로 치명적 오류 뒤 대기열에서 추가 유료 호출이 시작되지 않는다.
+        # executor 종료는 이미 실행 중인 요청을 기다린 뒤 원래 예외를 전파한다.
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for start in range(0, len(current), workers):
+                futures = [pool.submit(check_current, d) for d in current[start:start + workers]]
+                done, pending = wait(futures, return_when=FIRST_EXCEPTION)
+                for future in futures:
+                    if future in done and future.exception() is not None:
+                        for queued in pending:
+                            queued.cancel()
+                        future.result()
+                new.extend(future.result() for future in futures)
         verified, rejected = derive_outcome(s["picked"], s.get("drafted", []), s.get("verdicts", []) + new)
         failed = sum(1 for v in new if not v["ok"])
         return {"verdicts": new, "round": rnd + 1, "verified": verified, "rejected": rejected,
@@ -456,11 +499,17 @@ class Pipeline:
         failed = [v for v in s["verdicts"] if v["attempt"] == last and not v["ok"] and v["retryable"]]
         if failed and s["round"] <= self.cfg["verify"]["max_regenerations"]:
             by_id = {p["id"]: p for p in s["picked"]}
+            by_draft = {(d["article_id"], d["attempt"]): d for d in s.get("drafted", [])}
             sends = []
             for v in failed:
                 notes = v["rule_problems"] + [f"{p['claim']} → {p['note']}" for p in v["problems"]]
-                sends.append(Send("report", {"item": by_id[v["article_id"]], "attempt": s["round"],
-                                             "feedback": "\n".join(f"- {n}" for n in notes)}))
+                payload = {"item": by_id[v["article_id"]], "attempt": s["round"],
+                           "feedback": "\n".join(f"- {n}" for n in notes)}
+                previous = by_draft.get((v["article_id"], v["attempt"]))
+                if previous is not None:
+                    payload.update(body=previous["body"], body_source=previous["body_source"],
+                                   body_meta=previous.get("body_meta", {}))
+                sends.append(Send("report", payload))
             return sends
         return "prepare_publication"
 
