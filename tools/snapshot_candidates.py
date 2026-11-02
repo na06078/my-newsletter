@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import json
 import random
 import sys
@@ -20,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 import collectors                      # noqa: E402
 from config import load_settings       # noqa: E402
 from net import Http                   # noqa: E402
+from 불변저장 import write_bytes_once  # noqa: E402
 
 SEED = "label-2026-10-29"
 SAMPLE_SIZE = 30
@@ -46,11 +48,21 @@ def stratified_sample(items: list[dict], n: int, seed: str) -> list[dict]:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="라벨링 표본 수집")
+    parser.add_argument("--out", type=Path, default=OUT)
+    out = parser.parse_args().out
+    if out.exists():
+        raise FileExistsError("기존 표본을 보존합니다. --out으로 새 경로를 지정하세요.")
     settings = load_settings()
     cfg = settings["cfg"]["collect"]
     now = datetime.now(timezone.utc)
     http = Http(cfg["user_agent"], cfg["request_timeout_s"])
-    pool, stats = collectors.collect(cfg, http, now, cfg["hours"])
+    try:
+        pool, stats = collectors.collect(cfg, http, now, cfg["hours"])
+    finally:
+        close = getattr(http, "close", None)
+        if callable(close):
+            close()
     sample = stratified_sample(pool, SAMPLE_SIZE, SEED)
 
     payload = {
@@ -61,9 +73,8 @@ def main() -> None:
         "source_stats": {k: v for k, v in stats.items() if not k.startswith("_")},
         "items": [{k: it[k] for k in KEEP_FIELDS} for it in sample],
     }
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"요청 {http.count}건 · 후보 풀 {len(pool)}건 → 표본 {len(sample)}건 · 저장: {OUT.relative_to(ROOT)}")
+    write_bytes_once(out, json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"))
+    print(f"요청 {http.count}건 · 후보 풀 {len(pool)}건 → 표본 {len(sample)}건 · 저장: {out}")
     print("풀   :", payload["pool_by_source"])
     print("표본 :", payload["sample_by_source"])
     print("소스 오류:", {k: v["error"] for k, v in payload["source_stats"].items() if v["error"]} or "없음")

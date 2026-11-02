@@ -25,7 +25,7 @@ import unittest
 
 
 SOURCES = ("run.py", "graph.py", "config.py", "llm.py", "호출예산.py",
-           "발행승인.py", "publisher.py", "collectors.py", "net.py", "metrics.py")
+           "발행승인.py", "불변저장.py", "publisher.py", "collectors.py", "net.py", "metrics.py")
 
 
 class SyntheticService:
@@ -323,6 +323,18 @@ class CommandHTTPIntegrationTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertIn("unrecognized arguments", result.stderr)
         self.assertEqual(self.service.counts(), {"feed": 0, "llm": 0, "post": 0, "readback": 0})
+
+    def test_cache_write_error_after_delivery_does_not_hide_message_or_resend(self):
+        result = self.python("-c", "import graph,run; "
+            "graph._write_local_cache=lambda *a,**k: (_ for _ in ()).throw(OSError('synthetic-cache-failure')); "
+            "raise SystemExit(run.main())")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("cache_write_failed", result.stdout)
+        self.assertIn("123456", result.stdout)
+        self.assertEqual(self.service.counts(), {"feed": 1, "llm": 8, "post": 1, "readback": 1})
+        receipt_path = next((self.root / "store/cache/publications").glob("*.receipt.json"))
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        self.assertEqual(receipt["result"]["status"], "sent")
 
     def test_missing_webhook_stops_before_feed_and_model_calls(self):
         (self.root / ".env").write_text("SYNTHETIC_API_KEY=dummy-local-test-only\n", encoding="utf-8")

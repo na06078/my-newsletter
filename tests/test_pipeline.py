@@ -98,6 +98,29 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(final["verified"], [])                             # 검수하지 못한 글은 내보내지 않는다
         self.assertEqual(sum(1 for e in events if e["stage"] == "report"), 3)   # 재생성으로 가지 않는다
 
+    def test_mixed_outcomes_preserve_good_articles_and_retry_only_failed_draft(self):
+        from graph import Draft
+        feed = atom([{"title": f"기사 {i}", "link": f"http://a.example/{i}", "hours_ago": i + 1,
+                      "body": "짧다" if i == 2 else long_body(f"기사{i}", 700)} for i in range(4)])
+        def handler(stage, system, user, schema):
+            if stage == "report":
+                i = next(i for i in range(4) if f"제목: 기사 {i}" in user)
+                headline = f"교정{i}" if "이전 초안이" in user else f"혼합{i}"
+                return Draft(headline=headline, summary="첫째입니다. 둘째입니다. 셋째입니다.", why="실습에 참고할 수 있습니다.")
+            if stage == "verify":
+                if "headline: 혼합3" in user:
+                    return LLMError("APITimeoutError")
+                if "headline: 혼합1" in user:
+                    return Verdict(ok=False, problems=[Problem(claim="초안", kind="unsupported", note="다시 확인")])
+            return FakeLLM.default(stage, system, user, schema)
+        final, events, pub = self.run_pipeline(feed, FakeLLM(handler), max_per_source=10)
+        self.assertEqual({v["headline"]: v["attempt"] for v in final["verified"]}, {"혼합0": 0, "교정1": 1})
+        self.assertEqual({r["title"] for r in final["rejected"]}, {"기사 2", "기사 3"})
+        self.assertEqual(sum(e["stage"] == "report" for e in events), 5)
+        self.assertEqual(sum(e["stage"] == "verify" for e in events), 4)
+        self.assertEqual(pub.calls, 1)
+        self.assertEqual(len(pub.embeds), 3)
+
     def test_format_violation_skips_judge_cost_and_triggers_retry(self):
         calls = {"verify": 0}
 

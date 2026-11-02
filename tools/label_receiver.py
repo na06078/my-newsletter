@@ -7,6 +7,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import json
 import hashlib
 import hmac
@@ -21,6 +22,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+from 불변저장 import write_bytes_once  # noqa: E402
 CANDIDATES = ROOT / "eval" / "candidates.json"
 OUT = Path(os.environ.get("LABEL_OUT", ROOT / "eval" / "labels.json"))   # 시험할 때만 다른 경로로 바꾼다
 PORT, MIN_LABELS, WAIT_SECONDS = int(os.environ.get("LABEL_PORT", 8765)), 25, 1800
@@ -148,7 +151,7 @@ def make_handler(server_ref: dict):
                 if length > MAX_BODY_BYTES:
                     return self._reply(413, {"ok": False, "error": "body_too_large"})
                 payload = json.loads(self.rfile.read(length).decode("utf-8"), object_pairs_hook=unique_object)
-                candidates = json.loads(CANDIDATES.read_text(encoding="utf-8"))
+                candidates = json.loads(server_ref.get("candidates_path", CANDIDATES).read_text(encoding="utf-8"))
                 if not valid_session(payload, candidates):
                     return self._reply(403, {"ok": False, "error": "invalid_session"})
                 labels, error = validate(payload, candidates)
@@ -159,17 +162,19 @@ def make_handler(server_ref: dict):
             if error:
                 return self._reply(400, {"ok": False, "error": error})
             try:
-                with OUT.open("x", encoding="utf-8") as stream:
-                    json.dump({"snapshot": payload["snapshot"], "labeled_via": "widget(127.0.0.1 수신기)",
-                               "received_at_kst": datetime.now(KST).isoformat(timespec="seconds"),
-                               "count": len(labels), "labels": labels}, stream, ensure_ascii=False, indent=2)
+                saved = {"snapshot": payload["snapshot"], "labeled_via": "widget(127.0.0.1 수신기)",
+                         "received_at_kst": datetime.now(KST).isoformat(timespec="seconds"),
+                         "count": len(labels), "labels": labels}
+                out_path = server_ref.get("out_path", OUT)
+                write_bytes_once(out_path, json.dumps(saved, ensure_ascii=False, sort_keys=True,
+                                                separators=(",", ":")).encode("utf-8"))
             except FileExistsError:
                 return self._reply(409, {"ok": False, "error": "labels_exist"})
             except OSError:
                 return self._reply(500, {"ok": False, "error": "label_write_failed"})
             server_ref["received"] = True
             self._reply(200, {"ok": True, "count": len(labels)})
-            print(f"수신 완료: {len(labels)}건 → {OUT.name}", flush=True)
+            print(f"수신 완료: {len(labels)}건 → {out_path.name}", flush=True)
             threading.Thread(target=server_ref["server"].shutdown, daemon=True).start()   # 한 번 받으면 닫는다
 
         def log_message(self, *args):       # 요청 로그는 남기지 않는다
@@ -194,8 +199,12 @@ def valid_session(payload, candidates):
         return False
 
 
-def main() -> int:
-    ref: dict = {}
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="라벨 수신기")
+    parser.add_argument("--candidates", type=Path, default=CANDIDATES)
+    parser.add_argument("--out", type=Path, default=OUT)
+    args = parser.parse_args([] if argv is None else argv)
+    ref: dict = {"candidates_path": args.candidates, "out_path": args.out}
     server = HTTPServer(("127.0.0.1", PORT), make_handler(ref))
     ref["server"] = server
     timer = threading.Timer(WAIT_SECONDS, server.shutdown)
@@ -212,4 +221,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

@@ -14,20 +14,24 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import time
+import sys
 import traceback
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from pathlib import Path
-from urllib import robotparser
+
 from urllib.parse import urlparse
 
 import feedparser
-import requests
+
 import trafilatura
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from net import (Http as GuardedHttp, Robots, BODY_MAX_BYTES, BODY_CONTENT_TYPES,
+                 _url_error, _robots_verdict)
 CANDIDATES_FILE = ROOT / "tools" / "candidates.yaml"
 OUTPUT_FILE = ROOT / "store" / "source_survey.json"
 
@@ -44,58 +48,17 @@ INLINE_BODY_ROUTES = {"api_arxiv"}        # 초록(abstract)이 응답에 이미
 
 
 # ── HTTP ────────────────────────────────────────────────────────────────────
-class Http:
-    """요청 횟수를 세는 얇은 GET 래퍼. 실패는 예외 대신 결과 dict 로 돌려준다."""
+class Http(GuardedHttp):
+    """운영 보호 정책을 그대로 쓰고 조사 결과의 bytes 필드만 덧붙인다."""
 
-    def __init__(self) -> None:
-        self.session = requests.Session()
-        self.session.headers.update({"User-Agent": USER_AGENT})
-        self.count = 0
+    def __init__(self, **kwargs) -> None:
+        super().__init__(USER_AGENT, timeout_s=kwargs.pop("timeout_s", TIMEOUT_S),
+                         gap_s=kwargs.pop("gap_s", REQUEST_GAP_S), **kwargs)
 
-    def get(self, url: str) -> dict:
-        self.count += 1
-        started = time.perf_counter()
-        try:
-            resp = self.session.get(url, timeout=TIMEOUT_S)
-            result = {
-                "status": resp.status_code, "bytes": len(resp.content),
-                "final_url": resp.url, "content_type": resp.headers.get("Content-Type", ""),
-                "error": None, "content": resp.content,
-            }
-        except requests.RequestException as exc:
-            result = {
-                "status": None, "bytes": 0, "final_url": url, "content_type": "",
-                "error": f"{type(exc).__name__}: {exc}"[:200], "content": b"",
-            }
-        result["ms"] = round((time.perf_counter() - started) * 1000)
-        time.sleep(REQUEST_GAP_S)
+    def get(self, url: str, **policy) -> dict:
+        result = super().get(url, **policy)
+        result["bytes"] = len(result["content"])
         return result
-
-
-class Robots:
-    """호스트별 robots.txt 를 한 번만 받아 허용 여부를 판정한다."""
-
-    def __init__(self, http: Http) -> None:
-        self.http = http
-        self.cache: dict[str, tuple] = {}
-
-    def verdict(self, url: str) -> str:
-        parts = urlparse(url)
-        origin = f"{parts.scheme}://{parts.netloc}"
-        if origin not in self.cache:
-            resp = self.http.get(f"{origin}/robots.txt")
-            if resp["status"] == 200:
-                parser = robotparser.RobotFileParser()
-                parser.parse(resp["content"].decode("utf-8", "replace").splitlines())
-                self.cache[origin] = (parser, "parsed")
-            elif resp["status"] is not None and 400 <= resp["status"] < 500:
-                self.cache[origin] = (None, "no_robots")      # 4xx 는 제한 없음으로 본다 (RFC 9309)
-            else:
-                self.cache[origin] = (None, "unreachable")    # 5xx·네트워크 오류는 '확인 불가'
-        parser, state = self.cache[origin]
-        if state == "parsed":
-            return "allowed" if parser.can_fetch(USER_AGENT, url) else "disallowed"
-        return state
 
 
 # ── 항목 정규화 ─────────────────────────────────────────────────────────────
@@ -167,14 +130,21 @@ def keyword_hit_rate(entries: list[dict], keywords: list[str], now: datetime, da
     return round(sum(1 for e in recent if any(k in e["blob"] for k in keywords)) / len(recent), 2)
 
 
-def check_body(http: Http, robots: Robots, url: str) -> dict:
-    sample = {"url": url, "robots": robots.verdict(url), "status": None, "chars": 0, "ok": False,
+def check_body(http: Http, robots: Robots, url: str, *, excluded_hosts=()) -> dict:
+    with http._budget():
+        return _check_body(http, robots, url, excluded_hosts)
+
+
+def _check_body(http, robots, url, excluded_hosts):
+    verdict = "not_checked" if _url_error(url, excluded_hosts) else _robots_verdict(robots, url, excluded_hosts)
+    sample = {"url": url, "robots": verdict, "status": None, "chars": 0, "ok": False,
               "ms": None, "source": "page"}
-    if sample["robots"] == "disallowed":
+    if verdict not in ("allowed", "no_robots"):
         return sample                      # 금지된 주소는 받아 오지 않는다
-    resp = http.get(url)
+    resp = http.get(url, excluded_hosts=excluded_hosts, robots=robots,
+                    max_bytes=BODY_MAX_BYTES, content_types=BODY_CONTENT_TYPES)
     sample["status"], sample["ms"] = resp["status"], resp["ms"]
-    if resp["status"] == 200:
+    if resp["status"] == 200 and not resp["error"]:
         text = trafilatura.extract(resp["content"])
         sample["chars"] = len(text or "")
         sample["ok"] = sample["chars"] >= MIN_BODY_CHARS
@@ -186,14 +156,16 @@ def survey_one(http: Http, robots: Robots, cand: dict, keywords: list[str],
                excluded_hosts: list[str], now: datetime) -> dict:
     result = {k: cand[k] for k in ("id", "name", "route", "tier", "lang", "url")}
     is_api = cand["route"] in {"api_hn", "api_arxiv"}
-    result["robots_feed"] = "n/a(API 약관 기준)" if is_api else robots.verdict(cand["url"])
-    if result["robots_feed"] == "disallowed":
-        result.update(http=None, parse_ok=False, gates={"G1": False, "G2": False, "G3": False})
-        return result
-
-    resp = http.get(cand["url"])
+    with http._budget():
+        result["robots_feed"] = ("n/a(API 약관 기준)" if is_api else
+                                 "not_checked" if _url_error(cand["url"], excluded_hosts) else
+                                 _robots_verdict(robots, cand["url"], excluded_hosts))
+        if result["robots_feed"] in ("disallowed", "unreachable"):
+            result.update(http=None, parse_ok=False, gates={"G1": False, "G2": False, "G3": False})
+            return result
+        resp = http.get(cand["url"], excluded_hosts=excluded_hosts, robots=None if is_api else robots)
     result["http"] = {k: resp[k] for k in ("status", "ms", "bytes", "final_url", "content_type", "error")}
-    if resp["status"] != 200:
+    if resp["status"] != 200 or resp["error"]:
         result.update(parse_ok=False, gates={"G1": False, "G2": False, "G3": False})
         return result
 
@@ -205,7 +177,7 @@ def survey_one(http: Http, robots: Robots, cand: dict, keywords: list[str],
     # 본문 표본: 날짜가 있는 최근 글 먼저. 제외 규정 도메인의 글은 어떤 경로로 들어와도 받지 않는다.
     ordered = sorted((e for e in entries if e["link"] and e["has_external_url"]),
                      key=lambda e: e["published"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
-    ordered = [e for e in ordered if not any(h in urlparse(e["link"]).netloc for h in excluded_hosts)]
+    ordered = [e for e in ordered if not _url_error(e["link"], excluded_hosts)]
     samples = []
     for entry in ordered[:BODY_SAMPLES]:
         if cand["route"] in INLINE_BODY_ROUTES:
@@ -213,7 +185,7 @@ def survey_one(http: Http, robots: Robots, cand: dict, keywords: list[str],
             samples.append({"url": entry["link"], "robots": "n/a", "status": 200, "chars": chars,
                             "ok": chars >= MIN_BODY_CHARS, "ms": None, "source": "feed_inline"})
         else:
-            samples.append(check_body(http, robots, entry["link"]))
+            samples.append(check_body(http, robots, entry["link"], excluded_hosts=excluded_hosts))
     result["body_samples"] = samples
     ok_count = sum(1 for s in samples if s["ok"])
     result["body_ok"] = f"{ok_count}/{len(samples)}"
@@ -231,9 +203,9 @@ def load_spec() -> tuple[list[dict], list[str], list[str]]:
     spec = yaml.safe_load(CANDIDATES_FILE.read_text(encoding="utf-8"))
     excluded_hosts = [x["host"] for x in spec["excluded_by_assignment"]]
     for cand in spec["candidates"]:           # 제외 규정을 어긴 후보가 섞이지 않게 막는다
-        host = urlparse(cand["url"]).netloc
-        if any(h in host for h in excluded_hosts):
-            raise SystemExit(f"제외 규정 위반 후보: {cand['id']} ({host})")
+        error = _url_error(cand["url"], excluded_hosts)
+        if error:
+            raise SystemExit(f"지원하지 않는 후보: {cand['id']} ({error})")
     return spec["candidates"], [k.lower() for k in spec["topic_keywords"]], excluded_hosts
 
 
@@ -270,8 +242,17 @@ def main() -> None:
         return
 
     now = datetime.now(timezone.utc)
-    http, robots = Http(), Robots(Http())
-    robots.http = http                       # 요청 횟수를 한 곳에서 센다
+    http = Http()
+    try:
+        _measure(http, candidates, keywords, excluded_hosts, args.only, now)
+    finally:
+        close = getattr(http, "close", None)
+        if close is not None:
+            close()
+
+
+def _measure(http, candidates, keywords, excluded_hosts, only, now):
+    robots = Robots(http)                    # 정책·요청 횟수·연결 풀 모두 같은 인스턴스
     results = []
     for cand in candidates:
         measured_at = datetime.now(timezone.utc)
@@ -286,7 +267,7 @@ def main() -> None:
     print_table(results)
 
     merged = {}
-    if args.only and OUTPUT_FILE.exists():
+    if only and OUTPUT_FILE.exists():
         previous = json.loads(OUTPUT_FILE.read_text(encoding="utf-8"))
         merged = {r["id"]: {"surveyed_at_utc": previous.get("surveyed_at_utc"),
                             "surveyed_at_kst": previous.get("surveyed_at_kst"), **r}

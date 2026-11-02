@@ -61,6 +61,27 @@ class RunCommandTests(unittest.TestCase):
         _, pipeline, _, _ = self.run_main("--hours", "24")
         pipeline.assert_called_once_with(self.settings, publish=True, hours=24)
 
+    def test_nonpositive_hours_are_rejected_before_pipeline(self):
+        for value in ("0", "-1"):
+            with self.subTest(value=value):
+                code, pipeline, _, _ = self.run_main("--hours", value)
+                self.assertEqual(code, 2)
+                pipeline.assert_not_called()
+
+    def test_sent_message_with_receipt_recording_error_is_not_silent_success(self):
+        published = {**self.final["published"], "recording_error": "receipt_write_failed"}
+        code, _, out, _ = self.run_main(final={**self.final, "published": published})
+        self.assertEqual(code, 2)
+        self.assertIn("123", out)
+        self.assertIn("receipt_write_failed", out)
+
+    def test_noncritical_cache_failure_keeps_known_delivery_and_warns(self):
+        final = {**self.final, "cache_status": {"status": "failed", "error": "cache_write_failed"}}
+        code, _, out, _ = self.run_main(final=final)
+        self.assertEqual(code, 0)
+        self.assertIn("123", out)
+        self.assertIn("cache_write_failed", out)
+
     def test_send_failure_and_readback_mismatch_are_exit_code_2(self):
         for published in ({"status": "failed", "sha256": self.manifest["sha256"], "readback": {"status": "unavailable"}},
                           {"status": "sent", "sha256": self.manifest["sha256"], "readback": {"status": "mismatch"}}):
@@ -140,6 +161,20 @@ class RunPipelineEntryTests(unittest.TestCase):
         error, llm, pipeline = self.call(publish=False, webhook=None)
         self.assertIsNone(error)
         self.assertIsNone(pipeline.call_args.kwargs["publisher"])
+
+    def test_owned_resources_are_closed_after_graph_finishes(self):
+        error, llm, _ = self.call(publish=False, webhook=None)
+        self.assertIsNone(error)
+        llm.return_value.close.assert_called_once_with()
+
+    def test_graph_failure_still_closes_both_resources(self):
+        import graph
+        with patch.object(graph, "LLM") as llm, patch.object(graph, "Http") as http, patch.object(graph, "Pipeline") as pipe:
+            pipe.return_value.build.return_value.invoke.side_effect = RuntimeError("synthetic-graph-error")
+            with self.assertRaisesRegex(RuntimeError, "synthetic-graph-error"):
+                graph.run_pipeline(self.settings, publish=False)
+            llm.return_value.close.assert_called_once_with()
+            http.return_value.close.assert_called_once_with()
 
 
 if __name__ == "__main__":

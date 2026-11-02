@@ -253,6 +253,24 @@ graph TD;
 - 독립 검토가 추가로 찾은 encoded hostname 우회·잘못된 리다이렉트의 예외 전파·손상된 과거 metrics의 진단 저장 차단도 실패를 관측한 뒤 보완했다. 수집 필터는 호스트의 percent-encoding을 풀어 제외 비교하고 HTTP는 encoded hostname을 지원하지 않는 입력으로 거절한다. 잘못된 이동은 안전한 오류 결과로 반환하며 다른 소스를 계속 처리한다.
 - 검토의 비차단 권고인 저장 라벨→평가의 내용 해시 결속은 별도 후속이다. 수신 시 세션/내용 해시를 확인하지만 기존 저장 라벨은 시각·ID만 갖는다. 과거 라벨에 해시를 사후 추가하거나 기존 평가를 다시 실행하지 않았으며, 같은 timestamp/ID로 표본 내용을 사후 편집한 경우까지 동일성을 보장하지 않는다.
 
+### 2차 리뷰의 안정성·보존·공통 통신 보완 (2026-11-02)
+
+기준 `778e36a` 이후의 별도 작업 단위다. 기존 모델·선별 기준·과거 실측과 기사/라벨/평가/발행을 유지했다. 이 단위는 정확성·보존·같은 정책의 적용을 다루며, 검수 병렬화·본문 재사용·robots single-flight 성능 작업은 다음 단위로 구분한다.
+
+| 연결 경계 | 보완 | 검증 근거 |
+|---|---|---|
+| 모델·발송 후 응답 | JSON/응답 봉투/메시지 검증, 비정상 author도 알려진 sent/ID와 receipt 유지, receipt 기록 실패를 CLI2로 구별 | 설치 SDK·격리 예산·합성 HTTP의 정상/실패·POST1회 |
+| 선별·본문 | 빈/무효 목록은 최신순 대체, model/fallback/empty_input 상태, 최소 보충 사건 중복 방지, 본문 실패 원인 보존 | 실패 관측 후 관련 시험·혼합 결과의 정상 기사만 발행 |
+| 공통 저장·표본 연결 | 완성된 임시 파일의 배타 hard link 게시, 기존 파일 보존, 새 후보→위젯→새 라벨→평가 선택 경로 | fsync/게시 오류·동시 작성·기본 자료 불변, 실제 loopback 저장과 평가 입력 연결 |
+| 라벨 UI | 저장 중/저장 후 선택·제출 잠금, 재열기/기존 라벨 안내 | 실제 Chrome 선택25건·저장본·편집 방지·왕복·재열기·화면 시각 확인 |
+| 평가 조건 | snapshot 시각으로 입력 고정, 모델 반복과 대체 반복의 지표 분리, 양수 CLI 범위 | 서로 다른 평가 시각·fallback 혼합·잘못된 입력 사전 거절 시험 |
+| HTTP 공통 정책·전체 기한 | 운영·조사 보호 공유, 기본 전체60초 내 실제 async 취소/응답 닫기, 압축 해제 출력도 제한 | loopback의 늦은 헤더·drip 헤더/본문·중첩 robots·이동·소켓 종료·gzip/deflate |
+| 소유 자원·후처리 | 직접 만든 클라이언트의 정상/오류 finally 정리, 주입 클라이언트 소유권 보존, 선택적 캐시 오류는 전송 결과와 분리 | 소유 정리 시험·실제 CLI의 전송 후 캐시 오류 주입 |
+
+HTTP의 idle timeout만으로 전체 기한을 보장할 수 없어 내부 전송에 이미 설치된 HTTPX0.28.1과 표준 asyncio 취소를 사용했다. 동기 Http/get 결과 계약·수집/조사 지표는 유지하고 클라이언트·연결 풀은 재사용한다. 새 설치는 하지 않았다. 환경 프록시는 자동 사용하지 않고 gzip/deflate 외 인코딩은 안전하게 거부한다. 실제 사이트의 수집량·프록시 환경·OpenAI·Discord 재검증은 이번 승인에서 제외돼 미실행이다.
+
+메인의 최종 안정성 시험은18모듈206건 OK(실패·오류·스킵0, exit0)다. 기준141개 시험 ID 누락0·신규65개를 대조했다. 중간203건 시험에서 발견한 중첩 robots 시간 초과 사유 전달1건은 시계 경계와 무관한 실패 재현 후 보완했고 최종 전체에 포함했다. 독립 검토의 새 표본 입력 연결·조사 inline 제외 정책 지적도 선택 인자/공통 정책과 회귀·실제 브라우저 경로로 처리했다. 보호 파일29개 해시·REPORT1·6절 사용자 문장·요청 장부는 보존하며 실제 제공자 요청0, 과거 결과 사후 정정0이다. 작업 단위 커밋은 저장소 밖 진행 현황에 기록한다.
+
 ## 6. 프로젝트 회고
 
 사용자 응답을 의미 변경 없이 문장만 정리했다.
@@ -274,7 +292,7 @@ cp .env.example .env                 # OPENAI_API_KEY, DISCORD_WEBHOOK_URL 입�
 python run.py                        # 수집→선별→요약→검수→Discord 발송·재조회까지 자동 (OPENAI_API_KEY·DISCORD_WEBHOOK_URL 필요)
 python run.py --dry-run              # Discord 에만 보내지 않고 준비본까지 만들어 내용·SHA256 확인 (수집·모델 호출은 실제로 함)
 python run.py --show-prepared RUN_ID  # 저장된 준비본 내용·SHA256 확인, 읽기 전용·모델 호출 없음
-python -m unittest tests.test_pipeline tests.test_rules tests.test_tools tests.테스트_호출예산 tests.테스트_발행승인 tests.테스트_실행승인 tests.테스트_연결확인 tests.테스트_검수기준 tests.테스트_명령통합 tests.테스트_수집경계 tests.테스트_모델발행경계 tests.테스트_도구경계
+python -m unittest tests.test_pipeline tests.test_rules tests.test_tools tests.테스트_호출예산 tests.테스트_발행승인 tests.테스트_실행승인 tests.테스트_연결확인 tests.테스트_검수기준 tests.테스트_명령통합 tests.테스트_수집경계 tests.테스트_모델발행경계 tests.테스트_도구경계 tests.테스트_불변저장 tests.테스트_선별오류 tests.테스트_응답복구 tests.테스트_평가보존 tests.테스트_통신공통화 tests.테스트_새표본연결
 ```
 
 `config.yaml`의 `llm.request_limit`(현재 95)은 이 PC의 `store/호출예산.sqlite3`(Git 제외)에 누적하는 실제 요청 상한이다. 장부가 없는 새 환경에서는 처음부터 새로 시작한다.
@@ -288,6 +306,7 @@ Python unittest의 기본 discovery는 한국어로 시작하는 파일을 생�
 | `graph.py` | State, 5단계 6노드(발행은 `prepare_publication`·`send_publication`), 코드가 확정하는 규칙, 그래프 조립 |
 | `run.py` | 수집→발송 실행(기본은 자동 발송), `--dry-run`, `--show-prepared`, `--hours` |
 | `호출예산.py`, `발행승인.py` | 영속 실제 요청 상한, 불변 준비본·일회 전송·재조회(발행 노드가 사용) |
+| `불변저장.py` | 표본·라벨·발행의 완성 바이트를 기존 대상 교체 없이 원자적으로 게시 |
 | `tools/연결확인.py` | 실제 구조화 응답 한 번으로 연결 확인·비밀 없는 결과 저장 |
 | `audience.yaml` | 독자·중요도 문장·제외 조건·검수 기준(사용자 편집 영역) |
 | `config.yaml` | 소스 목록, 모델명·주소, 묶음 크기, 상한 등 운영 설정 |

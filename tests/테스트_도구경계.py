@@ -181,7 +181,8 @@ class ValidationBoundaries(unittest.TestCase):
             def __init__(self, *args, **kwargs):
                 pass
             def select(self, state):
-                return {"shortlisted": state["collected"], "picked": []}
+                return {"shortlisted": state["collected"], "picked": [],
+                        "selection_status": "model", "selection_fallbacks": []}
             def check_draft(self, draft):
                 return {"ok": True, "rule_problems": [], "judge_ok": True, "error": None, "problems": []}
         with tempfile.TemporaryDirectory() as tmp:
@@ -380,6 +381,7 @@ class ToolCommandIntegration(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "tools").mkdir(); (root / "eval").mkdir()
+            shutil.copy2(Path(receiver.__file__).resolve().parent.parent / "불변저장.py", root / "불변저장.py")
             for module in [widget, receiver]:
                 source = Path(module.__file__)
                 shutil.copy2(source, root / "tools" / source.name)

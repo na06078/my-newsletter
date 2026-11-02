@@ -56,7 +56,7 @@ const DATA = /*DATA*/;
 const KEY = "label-" + DATA.snapshot;
 const PER = 10;
 const NAMES = [["중요", 2], ["보통", 1], ["무관", 0]];
-let labels = {}, page = 0, submitted = false;
+let labels = {}, page = 0, submitted = false, saving = false;
 try { labels = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) {}
 function save() { try { localStorage.setItem(KEY, JSON.stringify(labels)); } catch (e) {} }
 // 문자열 자식은 텍스트 노드로 들어가 HTML 로 해석되지 않는다 (외부 피드 내용을 안전하게 넣기 위함)
@@ -79,17 +79,17 @@ function render() {
     el("button", {id: "next", disabled: page === pages - 1, textContent: "다음"}));
   document.getElementById("list").replaceChildren(...DATA.items.slice(page * PER, page * PER + PER).map((it, i) => {
     const opts = el("div", {class: "opts"}, ...NAMES.map(([name, v]) =>
-      el("button", {"data-id": it.id, "data-v": String(v), class: labels[it.id] === v ? "on" : "", textContent: name})));
+      el("button", {"data-id": it.id, "data-v": String(v), disabled: submitted || saving, class: labels[it.id] === v ? "on" : "", textContent: name})));
     const link = el("a", {href: safeUrl(it.url), target: "_blank", rel: "noopener", textContent: it.title});
     return el("div", {class: "item"},
       el("div", {class: "meta", textContent: `${page * PER + i + 1}. ${it.source} · ${it.age}`}),
       el("div", {class: "title"}, link), el("div", {class: "sum", textContent: it.summary}), opts);
   }));
-  document.getElementById("submit").disabled = done < 25 || submitted;
+  document.getElementById("submit").disabled = done < 25 || submitted || saving;
 }
 document.addEventListener("click", ev => {
   const b = ev.target.closest("button"); if (!b) return;
-  if (b.dataset.id) { labels[b.dataset.id] = Number(b.dataset.v); save(); render(); }
+  if (b.dataset.id) { if (submitted || saving) return; labels[b.dataset.id] = Number(b.dataset.v); save(); render(); }
   else if (b.id === "prev") { page = Math.max(0, page - 1); render(); }
   else if (b.id === "next") { page = Math.min(Math.ceil(DATA.items.length / PER) - 1, page + 1); render(); }
   else if (b.id === "submit") { submit(); }
@@ -103,35 +103,46 @@ function showFallback(text) {
     el("textarea", {readOnly: true, value: text}));
 }
 function submit() {
+  if (submitted || saving || Object.keys(labels).length < 25) return;
   const text = "[라벨링 제출] " + JSON.stringify({snapshot: DATA.snapshot, labels: labels});
   const status = document.getElementById("status");
   if (window.hermes && window.hermes.send) {
-    window.hermes.send(text); submitted = true;
+    window.hermes.send(text); markSent(); submitted = true;
     status.textContent = "제출했습니다. 저장 결과가 곧 표시됩니다.";
     render();
     return;
   }
+  saving = true; render();
   status.textContent = "저장 중...";
   // 대화창 밖에서 열었을 때: 이 PC 안(127.0.0.1)의 임시 수신기로만 보낸다
   fetch(ENDPOINT, {method: "POST", headers: {"Content-Type": "text/plain;charset=UTF-8"},
                    body: JSON.stringify({snapshot: DATA.snapshot, labels: labels, session_id: DATA.session_id, token: DATA.token})})
     .then(r => r.json())
     .then(j => {
+      if (j.error === "labels_exist") {
+        submitted = true; saving = false; markSent();
+        status.textContent = "이미 저장된 라벨이 있어 덮어쓰지 않았습니다. 현재 선택은 서버 저장본을 새로 조회한 결과가 아닙니다. 읽기 전용입니다.";
+        document.getElementById("fallback").replaceChildren(); render(); return;
+      }
       if (!j.ok) throw new Error(j.error || "저장 실패");
-      markSent(); submitted = true; status.textContent = `저장했습니다 (${j.count}건).`; render();
+      markSent(); submitted = true; saving = false;
+      document.getElementById("fallback").replaceChildren(); status.textContent = `저장했습니다 (${j.count}건).`; render();
     })
-    .catch(() => { status.textContent = "자동 저장에 실패했습니다."; showFallback(text); });
+    .catch(() => { saving = false; render(); status.textContent = "자동 저장에 실패했습니다."; showFallback(text); });
 }
+submitted = sentFlag();
+if (submitted) document.getElementById("status").textContent = "이 브라우저의 이전 제출 기록입니다. 서버를 새로 조회한 결과는 아닙니다. 읽기 전용입니다.";
 render();
 if (!(window.hermes && window.hermes.send) && Object.keys(labels).length >= 25 && !sentFlag()) { submit(); }
 </script></body></html>
 """
 
 
-def build(out: Path) -> None:
+def build(out: Path, *, candidates_path: Path | None = None) -> None:
     if out.exists():
         raise FileExistsError("기존 위젯을 보존합니다. 새 HTML 경로를 지정하세요.")
-    snap = json.loads(SRC.read_text(encoding="utf-8"))
+    source = SRC if candidates_path is None else Path(candidates_path)
+    snap = json.loads(source.read_text(encoding="utf-8"))
     taken_at = datetime.fromisoformat(snap["snapshot_at_kst"])
     items = []
     for it in snap["items"]:
@@ -161,4 +172,6 @@ def build(out: Path) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--out", default=str(ROOT / "eval" / "label_widget.html"))
-    build(Path(parser.parse_args().out))
+    parser.add_argument("--candidates", type=Path, default=SRC)
+    args = parser.parse_args()
+    build(Path(args.out), candidates_path=args.candidates)

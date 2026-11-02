@@ -2,11 +2,16 @@
 robots.txt 를 지키며, 웹 페이지에서 본문을 추출한다."""
 from __future__ import annotations
 
+import asyncio
+from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
+import threading
 import time
+import zlib
 from urllib import robotparser
 from urllib.parse import urlparse, urljoin
 
-import requests
+import httpx
 import trafilatura
 
 from collectors import host_excluded
@@ -15,13 +20,11 @@ FEED_MAX_BYTES = 8 * 1024 * 1024
 BODY_MAX_BYTES = 2 * 1024 * 1024
 ROBOTS_MAX_BYTES = 512 * 1024
 BODY_CONTENT_TYPES = ("text/html", "application/xhtml+xml", "text/plain")
+REQUEST_DEADLINE_S = 60
 
 
-class _ControlledSession(requests.Session):
-    def resolve_redirects(self, *args, **kwargs):
-        # Requests는 allow_redirects=False여도 다음 PreparedRequest를 만들며
-        # 이동 응답 본문을 읽는다. 직접 이동하므로 그 숨은 무제한 읽기도 끈다.
-        return iter(())
+class _DeadlineExceeded(Exception):
+    pass
 
 
 def _url_error(url, excluded_hosts):
@@ -52,15 +55,135 @@ def _robots_verdict(robots, url, excluded_hosts):
 class Http:
     """GET 요청 래퍼. 실패는 예외 대신 결과 dict 로 돌려줘 호출한 쪽이 기록하게 한다."""
 
-    def __init__(self, user_agent: str, timeout_s: int = 20, gap_s: float = 0.3) -> None:
+    def __init__(self, user_agent: str, timeout_s: int = 20, gap_s: float = 0.3,
+                 *, deadline_s: float = REQUEST_DEADLINE_S) -> None:
         self.user_agent = user_agent
         self.timeout_s = timeout_s
         self.gap_s = gap_s                # 연달아 보내는 요청이 한꺼번에 몰리지 않게 두는 간격
         self.count = 0
-        self.session = _ControlledSession()
-        self.session.headers.update({"User-Agent": user_agent})
+        self.deadline_s = deadline_s
+        self._deadline = ContextVar("http_deadline", default=None)
+        self._deadline_expired = ContextVar("http_deadline_expired", default=False)
+        self._lock = threading.Lock()
+        self._loop = asyncio.new_event_loop()
+        self._thread = None
+        self._closed = False
+        # 한 실행에서 TLS/연결 풀을 재사용한다. 자동 이동·암묵적 프록시는 사용하지 않는다.
+        self._client = httpx.AsyncClient(headers={"User-Agent": user_agent,
+                                                  "Accept-Encoding": "gzip, deflate"},
+                                         timeout=timeout_s, follow_redirects=False, trust_env=False)
+
+    @contextmanager
+    def _budget(self):
+        token = None
+        expired_token = None
+        if self._deadline.get() is None:
+            token = self._deadline.set(time.monotonic() + self.deadline_s)
+            expired_token = self._deadline_expired.set(False)
+        try:
+            yield
+        finally:
+            if token is not None:
+                self._deadline.reset(token)
+                self._deadline_expired.reset(expired_token)
+
+    def _remaining(self):
+        remaining = self._deadline.get() - time.monotonic()
+        if self._deadline_expired.get() or remaining <= 0:
+            raise _DeadlineExceeded
+        return remaining
+
+    def _submit(self, coroutine):
+        with self._lock:
+            if self._closed:
+                coroutine.close()
+                raise RuntimeError("http_closed")
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._loop.run_forever, daemon=True,
+                                                name="newsletter-http")
+                self._thread.start()
+            future = asyncio.run_coroutine_threadsafe(coroutine, self._loop)
+        # Future가 timeout으로 버려지는 것이 아니라 실제 async context 종료까지 기다린다.
+        return future.result()
+
+    def close(self):
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            thread = self._thread
+        if thread is not None:
+            asyncio.run_coroutine_threadsafe(self._client.aclose(), self._loop).result()
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            thread.join()
+        else:
+            asyncio.run(self._client.aclose())
+        self._loop.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    async def _request(self, url, limit, content_types, result, deadline):
+        # 헤더 한 바이트씩의 수신도 포함해 전체 대기 자체를 취소한다.
+        if time.monotonic() >= deadline:
+            raise TimeoutError
+        async with asyncio.timeout(max(0, deadline - time.monotonic())):
+            with self._lock:
+                self.count += 1
+            async with self._client.stream("GET", url, timeout=self.timeout_s) as resp:
+                result.update(status=resp.status_code, content_type=resp.headers.get("Content-Type", ""))
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    return resp.headers.get("Location")
+                media_type = result["content_type"].split(";", 1)[0].strip().lower()
+                if media_type and content_types is not None and media_type not in content_types:
+                    result["error"] = "content_type_not_allowed"
+                    return None
+                encoding = resp.headers.get("Content-Encoding", "identity").strip().lower()
+                if encoding not in ("", "identity", "gzip", "deflate"):
+                    result["error"] = "unsupported_content_encoding"
+                    return None
+                decoder = (zlib.decompressobj(16 + zlib.MAX_WBITS if encoding == "gzip" else zlib.MAX_WBITS)
+                           if encoding in ("gzip", "deflate") else None)
+                content = bytearray()
+                first_decode = True
+                # HTTPX aiter_bytes는 해제된 큰 청크를 먼저 만든다. raw+max_length로
+                # 압축 폭탄도 최대 limit+1 바이트만 할당한 뒤 거절한다.
+                async for raw in resp.aiter_raw(chunk_size=65536):
+                    pending = raw
+                    while pending:
+                        if decoder and decoder.eof:
+                            if encoding != "gzip":
+                                result["error"] = "DecodingError"
+                                return None
+                            decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+                        try:
+                            chunk = decoder.decompress(pending, limit + 1 - len(content)) if decoder else pending
+                        except zlib.error:
+                            if encoding != "deflate" or not first_decode:
+                                raise
+                            # 기존 Requests/HTTPX와 같은 raw-deflate 호환 경로도 상한을 유지한다.
+                            decoder = zlib.decompressobj(-zlib.MAX_WBITS)
+                            chunk = decoder.decompress(pending, limit + 1 - len(content))
+                        first_decode = False
+                        if len(content) + len(chunk) > limit:
+                            result["error"] = "response_too_large"
+                            return None
+                        content.extend(chunk)
+                        pending = decoder.unused_data if decoder else b""
+                if decoder and not decoder.eof:
+                    result["error"] = "DecodingError"
+                    return None
+                result["content"] = bytes(content)
+                return None
 
     def get(self, url: str, *, excluded_hosts=(), robots=None, max_bytes=None, content_types=None) -> dict:
+        with self._budget():
+            return self._get(url, excluded_hosts, robots, max_bytes, content_types)
+
+    def _get(self, url, excluded_hosts, robots, max_bytes, content_types):
         started = time.perf_counter()
         limit = FEED_MAX_BYTES if max_bytes is None else max_bytes
         current = url
@@ -69,21 +192,19 @@ class Http:
         try:
             for hop in range(6):
                 result.update(status=None, content=b"", final_url=current, content_type="")
+                self._remaining()
                 error = _url_error(current, excluded_hosts)
                 if error is None and robots is not None:
                     verdict = _robots_verdict(robots, current, excluded_hosts)
                     if verdict not in ("allowed", "no_robots"):
                         error = "robots_" + ("disallowed" if verdict == "disallowed" else "unreachable")
+                self._remaining()
                 if error:
                     result["error"] = error
                     break
-                self.count += 1
-                resp = None
                 try:
-                    resp = self.session.get(current, timeout=self.timeout_s, allow_redirects=False, stream=True)
-                    result.update(status=resp.status_code, content_type=resp.headers.get("Content-Type", ""))
-                    if resp.status_code in (301, 302, 303, 307, 308):
-                        location = resp.headers.get("Location")
+                    location = self._submit(self._request(current, limit, content_types, result, self._deadline.get()))
+                    if result["status"] in (301, 302, 303, 307, 308):
                         if not location:
                             result["error"] = "redirect_location"
                             break
@@ -96,24 +217,20 @@ class Http:
                             result["error"] = "redirect_location"
                             break
                         continue
-                    media_type = result["content_type"].split(";", 1)[0].strip().lower()
-                    if media_type and content_types is not None and media_type not in content_types:
-                        result["error"] = "content_type_not_allowed"
-                        break
-                    content = bytearray()
-                    for chunk in resp.iter_content(chunk_size=min(65536, limit + 1)):
-                        if len(content) + len(chunk) > limit:
-                            result["error"] = "response_too_large"
-                            break
-                        content.extend(chunk)
-                    if not result["error"]:
-                        result["content"] = bytes(content)
                     break
                 finally:
-                    if resp is not None:
-                        resp.close()
-                    time.sleep(self.gap_s)
-        except requests.RequestException as exc:
+                    remaining = self._deadline.get() - time.monotonic()
+                    time.sleep(max(0, min(self.gap_s, remaining)))
+                    if self.gap_s > 0 and remaining <= self.gap_s:
+                        # Windows의 sleep이 살짝 일찍 깨어나도 짧아진 간격으로 다음 요청을 보내지 않는다.
+                        raise _DeadlineExceeded
+        except (TimeoutError, _DeadlineExceeded):
+            # 중첩 robots의 명시적 취소를 벽시계 경계의 미세 오차 때문에 다른 사유로 바꾸지 않는다.
+            self._deadline_expired.set(True)
+            result.update(content=b"", error="total_deadline_exceeded")
+        except httpx.InvalidURL:
+            result.update(content=b"", error="unsupported_url")
+        except (httpx.HTTPError, zlib.error) as exc:
             # 예외 문구에 주소가 섞일 수 있어 종류만 남긴다
             result.update(content=b"", error=type(exc).__name__)
         result["ms"] = round((time.perf_counter() - started) * 1000)
@@ -161,6 +278,14 @@ def extract_text(content: bytes | str) -> str:
 
 def fetch_body(http: Http, robots: Robots, url: str, max_chars: int, *, excluded_hosts=()) -> dict:
     """기사 페이지를 받아 본문을 추출한다. robots.txt 가 막은 주소는 받아 오지 않는다."""
+    with http._budget() if isinstance(http, Http) else nullcontext():
+        out = _fetch_body(http, robots, url, max_chars, excluded_hosts)
+        if isinstance(http, Http) and (http._deadline_expired.get() or time.monotonic() >= http._deadline.get()):
+            out.update(text="", error="total_deadline_exceeded")
+        return out
+
+
+def _fetch_body(http, robots, url, max_chars, excluded_hosts):
     policy_error = _url_error(url, excluded_hosts)
     if policy_error:
         return {"text": "", "status": None, "robots": "not_checked", "error": policy_error}

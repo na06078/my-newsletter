@@ -94,7 +94,8 @@ class DiscordPublisher:
             message_id = None
             if resp.status_code == 200:
                 try:
-                    candidate_id = resp.json().get("id")
+                    body = resp.json()
+                    candidate_id = body.get("id") if isinstance(body, dict) else None
                     if self._valid_message_id(candidate_id):
                         message_id = candidate_id
                 except ValueError:

@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 
 import requests
 from publisher import DiscordPublisher
@@ -47,6 +48,19 @@ class AdapterTests(unittest.TestCase):
         result = pub.read_message("99")
         self.assertEqual(result["status"], "failed")
         self.assertNotIn("SECRET", json.dumps(result))
+
+    def test_nonobject_success_body_preserves_known_send(self):
+        for body in (None, [], "private-marker", 123):
+            with self.subTest(body=body):
+                calls = []
+                pub = DiscordPublisher(self.URL, live=True,
+                                       post=lambda *a, **kw: calls.append(kw) or Resp(payload=body))
+                result = pub.publish([{"title": "t"}])
+                self.assertEqual(result["status"], "sent")
+                self.assertEqual(result["http_status"], 200)
+                self.assertIsNone(result["message_id"])
+                self.assertEqual(len(calls), 1)
+                self.assertNotIn("private-marker", json.dumps(result))
 
     def test_explicit_mentions_and_owned_copy(self):
         calls = []
@@ -163,6 +177,71 @@ class FrozenTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already_claimed"):
             publish_prepared(self.store, "run-1", candidate["sha256"], pub)
         self.assertEqual(len(self.posts), 1)
+
+    def test_malformed_author_preserves_known_sent_receipt(self):
+        from 발행승인 import prepare_publication, publish_prepared
+        for n, author in enumerate((None, "private-marker", [])):
+            with self.subTest(author=author):
+                run_id = f"malformed-author-{n}"
+                candidate = prepare_publication(self.store, run_id, self.embeds)
+                pub = self.publisher(readback=Resp(payload={"id": "99", "embeds": self.embeds,
+                                                           "author": author, "username": "편집실"}))
+                result = publish_prepared(self.store, run_id, candidate["sha256"], pub)
+                self.assertEqual(result["status"], "sent")
+                self.assertEqual(result["message_id"], "99")
+                self.assertEqual(result["send_outcome"], "sent")
+                self.assertEqual(result["readback"], {"status": "failed"})
+                self.assertNotIn("private-marker", json.dumps(result))
+                receipt = json.loads((self.store / f"cache/publications/{run_id}.receipt.json").read_text(encoding="utf-8"))
+                self.assertEqual(receipt["result"], result)
+                with self.assertRaisesRegex(ValueError, "already_claimed"):
+                    publish_prepared(self.store, run_id, candidate["sha256"], pub)
+                self.assertEqual(len(self.posts), 1)
+                self.assertEqual(len(self.gets), 1)
+
+    def test_receipt_io_failure_preserves_known_result_without_resending(self):
+        import 발행승인 as publication
+        candidate = publication.prepare_publication(self.store, "receipt-error", self.embeds)
+        original = publication._create_immutable
+        def write(path, value):
+            if path.name.endswith(".receipt.json"):
+                raise OSError(AdapterTests.URL)
+            return original(path, value)
+        pub = self.publisher()
+        with patch.object(publication, "_create_immutable", side_effect=write):
+            result = publication.publish_prepared(self.store, "receipt-error", candidate["sha256"], pub)
+        self.assertEqual(result["status"], "sent")
+        self.assertEqual(result["http_status"], 200)
+        self.assertEqual(result["message_id"], "99")
+        self.assertEqual(result["send_outcome"], "sent")
+        self.assertEqual(result["readback"], {"status": "verified"})
+        self.assertEqual(result["recording_error"], "receipt_write_failed")
+        self.assertNotIn("SECRET", json.dumps(result))
+        with self.assertRaisesRegex(ValueError, "already_claimed"):
+            publication.publish_prepared(self.store, "receipt-error", candidate["sha256"], pub)
+        self.assertEqual(len(self.posts), 1)
+        self.assertEqual(len(self.gets), 1)
+        self.assertFalse((self.store / "cache/publications/receipt-error.receipt.json").exists())
+
+    def test_immutable_wrapper_keeps_canonical_policy_and_exception_semantics(self):
+        import 발행승인 as publication
+        from 불변저장 import write_bytes_once
+        path = self.store / "wrapper.json"
+        with patch.object(publication, "write_bytes_once", wraps=write_bytes_once) as write:
+            publication._create_immutable(path, {"나": 2, "a": 1})
+            write.assert_called_once_with(path, '{"a":1,"나":2}'.encode("utf-8"))
+        with self.assertRaises(FileExistsError):
+            publication._create_immutable(path, {"replacement": True})
+        self.assertEqual(path.read_bytes(), '{"a":1,"나":2}'.encode("utf-8"))
+        for value, reason in (({"key": AdapterTests.URL}, "secret_not_allowed"),
+                              ({"value": float("nan")}, "invalid_json")):
+            with self.subTest(reason=reason), patch.object(publication, "write_bytes_once") as write:
+                with self.assertRaisesRegex(publication.PublicationError, reason):
+                    publication._create_immutable(self.store / "unsafe.json", value)
+                write.assert_not_called()
+        with patch.object(publication, "write_bytes_once", side_effect=OSError("fake")):
+            with self.assertRaises(OSError):
+                publication._create_immutable(self.store / "error.json", {"safe": True})
 
     def test_concurrent_claims_post_exactly_once(self):
         from 발행승인 import prepare_publication, publish_prepared

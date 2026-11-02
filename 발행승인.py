@@ -6,8 +6,9 @@ import hashlib
 import json
 import os
 import re
-import tempfile
 from pathlib import Path
+
+from 불변저장 import write_bytes_once
 
 
 class PublicationError(ValueError):
@@ -85,17 +86,8 @@ def _validate_payload(payload):
 
 
 def _create_immutable(path, value):
-    """완전히 쓴 파일을 hard link로 원자적 생성한다. 기존 대상은 교체하지 않는다."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=".publication-", dir=path.parent)
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(_canonical(value))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.link(temporary, path)
-    finally:
-        os.unlink(temporary)
+    """정책 검증된 정본 바이트만 공통 불변 저장기로 전달한다."""
+    write_bytes_once(path, _canonical(value))
 
 
 def _canonical(value):
@@ -177,17 +169,24 @@ def publish_prepared(store, run_id, confirmed_sha256, publisher):
     if result.get("status") == "sent" and result.get("message_id"):
         try:
             read = publisher.read_message(result["message_id"])
+            result["readback"] = {"status": "failed"}
+            if isinstance(read, dict) and read.get("status") == "read":
+                message = read.get("message")
+                if isinstance(message, dict):
+                    author = message.get("author", {})
+                    if isinstance(author, dict):
+                        matches = _supplied_fields_match(payload["embeds"], message.get("embeds"))
+                        username = author.get("username", message.get("username"))
+                        matches = matches and username == payload["username"]
+                        result["readback"] = {"status": "verified" if matches else "mismatch"}
         except Exception:
-            read = {"status": "failed"}
-        if read.get("status") == "read":
-            message = read["message"]
-            matches = _supplied_fields_match(payload["embeds"], message.get("embeds"))
-            username = message.get("author", {}).get("username", message.get("username"))
-            matches = matches and username == payload["username"]
-            result["readback"] = {"status": "verified" if matches else "mismatch"}
-        else:
+            # 발송 후 해석 오류도 알려진 전송 결과를 지우거나 재발송하지 않는다.
             result["readback"] = {"status": "failed"}
     else:
         result["readback"] = {"status": "unavailable"}
-    _create_immutable(_path(store, run_id, ".receipt.json"), {"sha256": manifest["sha256"], "result": result})
+    try:
+        _create_immutable(_path(store, run_id, ".receipt.json"), {"sha256": manifest["sha256"], "result": result})
+    except OSError:
+        # claim은 유지한다. 전송/재조회 결과는 보존하고 저장 실패만 구분한다.
+        result["recording_error"] = "receipt_write_failed"
     return result

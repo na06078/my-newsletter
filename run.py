@@ -31,7 +31,8 @@ def publication_preview(manifest: dict) -> str:
 
 def delivered(published: dict) -> bool:
     """실제로 보냈고, 보낸 메시지를 다시 조회해 준비본과 일치함을 확인했는가."""
-    return published.get("status") == "sent" and published.get("readback", {}).get("status") == "verified"
+    return (published.get("status") == "sent" and published.get("readback", {}).get("status") == "verified"
+            and not published.get("recording_error"))
 
 
 def main() -> int:
@@ -43,6 +44,8 @@ def main() -> int:
     action.add_argument("--show-prepared", metavar="RUN_ID", help="저장된 준비본 내용과 해시 확인 (모델 호출 없음)")
     parser.add_argument("--hours", type=int, help="수집 시간 창(시간). 기본은 config.yaml 의 collect.hours")
     args = parser.parse_args()
+    if args.hours is not None and args.hours <= 0:
+        parser.error("--hours 는 0보다 큰 정수여야 합니다.")
     if args.hours is not None and args.show_prepared:
         parser.error("저장된 준비본은 --hours 로 다시 생성하지 않습니다.")
 
@@ -74,6 +77,12 @@ def main() -> int:
     published = final["published"]
     print(f"\n실행 {final['run_id']} · 발행 상태: {published['status']}")
     print(f"준비본 SHA256: {manifest['sha256']}")
+    if published.get("recording_error"):
+        print(f"[오류] 전송 결과 기록 실패: {published['recording_error']}. 같은 내용을 자동 재전송하지 않습니다.")
+    if final.get("cache_status", {}).get("status") == "failed":
+        print("[경고] 검수 시험용 캐시 저장 실패: cache_write_failed. 알려진 발행 결과는 유지됩니다.")
+    for error in final.get("cleanup_errors", []):
+        print(f"[경고] 연결 정리 실패: {error['resource']}/{error['error']}")
     if args.dry_run:
         return 0
     if published.get("message_id"):

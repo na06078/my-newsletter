@@ -10,6 +10,12 @@ from net import Http, Robots, fetch_body
 from tests.support import NOW, SRC, atom
 
 
+def observe_responses(http, responses):
+    async def record(response):
+        responses.append(response)
+    http._client.event_hooks["response"].append(record)
+
+
 @contextmanager
 def server(routes):
     seen = []
@@ -48,7 +54,7 @@ class SourceTests(unittest.TestCase):
                  "body": "inline source text " * 100}
         with server({"/feed": (200, {}, atom([entry]))}) as (base, seen):
             http = Http("test", gap_s=0)
-            self.addCleanup(http.session.close)
+            self.addCleanup(http.close)
             items, stats = collect({"per_source_cap": 2, "excluded_hosts": ["techcrunch.com"],
                                     "sources": [{**SRC, "url": base + "/feed"}]}, http, NOW, 48)
         self.assertEqual(items, [])
@@ -59,8 +65,7 @@ class SourceTests(unittest.TestCase):
             location = dest.replace("127.0.0.1", "localhost") + "/feed"
             with server({"/feed": (302, {"Location": location}, b"")}) as (base, seen):
                 http = Http("test", gap_s=0)
-                http.session.trust_env = False
-                self.addCleanup(http.session.close)
+                self.addCleanup(http.close)
                 items, stats = collect({"per_source_cap": 2, "excluded_hosts": ["localhost"],
                                         "sources": [{**SRC, "url": base + "/feed"}]}, http, NOW, 48)
         self.assertEqual(dest_seen, [])
@@ -71,7 +76,7 @@ class SourceTests(unittest.TestCase):
     def test_oversized_feed_records_error_not_empty_success(self):
         with server({"/feed": (200, {}, b"x" * (8 * 1024 * 1024 + 1))}) as (base, seen):
             http = Http("test", gap_s=0)
-            self.addCleanup(http.session.close)
+            self.addCleanup(http.close)
             items, stats = collect({"per_source_cap": 2, "sources": [{**SRC, "url": base + "/feed"}]},
                                    http, NOW, 48)
         self.assertEqual(items, [])
@@ -87,7 +92,7 @@ class SourceTests(unittest.TestCase):
             sources = [{**SRC, "urls": [base + "/q1", base + "/q2"]},
                        {**SRC, "id": "other", "url": base + "/other", "tier": 2}]
             http = Http("test", gap_s=0)
-            self.addCleanup(http.session.close)
+            self.addCleanup(http.close)
             items, stats = collect({"sources": sources, "per_source_cap": 2}, http, NOW, 48)
         self.assertEqual([i["title"] for i in items], ["new", "second"])
         self.assertEqual(stats["_dedupe_removed"], 3)
@@ -119,7 +124,7 @@ class NetworkTests(unittest.TestCase):
                   "/good": (200, {}, atom([{"title": "good", "link": "https://safe.example/good", "hours_ago": 1}]))}
         with server(routes) as (base, seen):
             http = self.http()
-            http.session.hooks["response"].append(lambda response, **kw: responses.append(response))
+            observe_responses(http, responses)
             out = http.get(base + "/bad")
             self.assertEqual(out["error"], "redirect_location")
             body = fetch_body(http, Robots(http), base + "/body", 6000)
@@ -128,7 +133,8 @@ class NetworkTests(unittest.TestCase):
                 {**SRC, "id": "bad", "url": base + "/bad"}, {**SRC, "id": "good", "url": base + "/good"}]}, http, NOW, 48)
         self.assertEqual([item["title"] for item in items], ["good"])
         self.assertEqual(stats["bad"]["error"], "redirect_location")
-        self.assertTrue(all(response.raw.closed for response in responses))
+        self.assertTrue(responses)
+        self.assertTrue(all(response.is_closed for response in responses))
 
     def test_robots_redirect_cannot_bypass_excluded_host(self):
         with server({"/policy": (200, {}, b"User-agent: *\nAllow: /\n")}) as (dest, dest_seen):
@@ -154,13 +160,14 @@ class NetworkTests(unittest.TestCase):
         responses = []
         with server(routes) as (base, seen):
             http = self.http()
-            http.session.hooks["response"].append(lambda response, **kw: responses.append(response))
+            observe_responses(http, responses)
             out = fetch_body(http, Robots(http), base + "/start", 6000)
         self.assertIsNone(out["error"])
         self.assertIn("improves inference", out["text"])
         self.assertEqual(seen, ["/robots.txt", "/start", "/article"])
-        self.assertTrue(all(response.raw.closed for response in responses))
-        self.assertIs(responses[1]._content, False)  # 이동 응답을 Requests 내부에서 미리 읽지 않음.
+        self.assertEqual(len(responses), 3)
+        self.assertTrue(all(response.is_closed for response in responses))
+        self.assertFalse(responses[1].is_stream_consumed)
 
     def test_excluded_redirect_destination_receives_no_robots_or_body(self):
         with server({"/body": (200, {}, b"forbidden")}) as (dest, dest_seen):
@@ -204,12 +211,13 @@ class NetworkTests(unittest.TestCase):
         responses = []
         with server(routes) as (base, seen):
             http = self.http()
-            http.session.hooks["response"].append(lambda response, **kw: responses.append(response))
+            observe_responses(http, responses)
             out = http.get(base + "/0")
         self.assertEqual(out["error"], "redirect_limit")
         self.assertEqual(seen, ["/0", "/1", "/2", "/3", "/4", "/5"])
         self.assertEqual(http.count, 6)
-        self.assertTrue(all(response.raw.closed and response._content is False for response in responses))
+        self.assertEqual(len(responses), 6)
+        self.assertTrue(all(response.is_closed and not response.is_stream_consumed for response in responses))
 
     def test_accepted_body_types_and_missing_header_have_positive_control(self):
         article = b"<html><body><article><p>" + b"Useful local model release improves inference. " * 50 + b"</p></article></body></html>"
@@ -225,12 +233,13 @@ class NetworkTests(unittest.TestCase):
         responses = []
         with server({"/body": (200, {"Content-Type": "application/pdf"}, b"not an article")}) as (base, seen):
             http = self.http()
-            http.session.hooks["response"].append(lambda response, **kw: responses.append(response))
+            observe_responses(http, responses)
             out = fetch_body(http, Robots(http), base + "/body", 6000)
         self.assertEqual(out["error"], "content_type_not_allowed")
         self.assertEqual(out["text"], "")
-        self.assertTrue(all(response.raw.closed for response in responses))
-        self.assertIs(responses[-1]._content, False)
+        self.assertEqual(len(responses), 2)
+        self.assertTrue(all(response.is_closed for response in responses))
+        self.assertFalse(responses[-1].is_stream_consumed)
 
     def test_decoded_stream_limit_rejects_plain_and_gzip(self):
         expanded = b"x" * (2 * 1024 * 1024 + 1)
@@ -242,12 +251,13 @@ class NetworkTests(unittest.TestCase):
                 responses = []
                 with server({"/body": (200, headers, payload)}) as (base, seen):
                     http = self.http()
-                    http.session.hooks["response"].append(lambda response, **kw: responses.append(response))
+                    observe_responses(http, responses)
                     out = fetch_body(http, Robots(http), base + "/body", 6000)
                 self.assertEqual(out["error"], "response_too_large")
                 self.assertEqual(out["text"], "")
                 self.assertEqual(seen, ["/robots.txt", "/body"])
-                self.assertTrue(all(response.raw.closed for response in responses))
+                self.assertEqual(len(responses), 2)
+                self.assertTrue(all(response.is_closed for response in responses))
 
     def test_explicit_byte_limit_allows_exact_length_then_rejects_one_extra(self):
         with server({"/exact": (200, {}, b"1234567890"), "/extra": (200, {}, b"12345678901")}) as (base, seen):
@@ -262,8 +272,7 @@ class NetworkTests(unittest.TestCase):
 
     def http(self):
         http = Http("test-bot", timeout_s=2, gap_s=0)
-        http.session.trust_env = False
-        self.addCleanup(http.session.close)
+        self.addCleanup(http.close)
         return http
 
     def test_oversized_robots_is_unreachable_not_allow_all(self):

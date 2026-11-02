@@ -130,6 +130,8 @@ def main() -> int:
     parser.add_argument("--run", help="store/cache/<run_id>.json 의 run_id (기본: 가장 최근)")
     parser.add_argument("--limit", type=int, default=5)
     args = parser.parse_args()
+    if args.limit <= 0:
+        parser.error("--limit는 양의 정수여야 합니다")
     path = (ROOT / "store" / "cache" / f"{args.run}.json") if args.run else latest_cache()
     if not path or not path.exists():
         print("store/cache/ 에 실행 캐시가 없습니다. 먼저 python run.py 를 실제 실행해 검수를 통과한 초안을 만드세요.", file=sys.stderr)

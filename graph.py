@@ -43,6 +43,8 @@ class Brief(TypedDict, total=False):
     collected: list                             # ① 수집한 기사
     shortlisted: list                           # ② 예선 통과
     picked: list                                # ② 본선에서 고른 3~5건
+    selection_status: Literal["model", "fallback", "empty_input"]
+    selection_fallbacks: list                    # 모델 선택과 장애 시 최신순 대체를 평가에서 구분한다
     drafted: Annotated[list, operator.add]      # ③ 요약 초안 (재생성 초안도 쌓인다)
     verdicts: Annotated[list, operator.add]     # ④ 초안별 검수 결과
     round: int                                  # 검수 회차 (0부터)
@@ -120,7 +122,14 @@ def enforce_rules(ranked: list, *, target: int, min_final: int, max_per_source: 
         for item, pick, reason in [d for d in dropped if d[2] == "소스 상한"]:
             if len(taken) >= min_final:
                 break
+            event = normalize_event(pick.event)
+            if event and event in events:
+                dropped.remove((item, pick, reason))
+                dropped.append((item, pick, "같은 사건 중복"))
+                continue
             taken.append((item, pick))
+            events.add(event)
+            per_source[item["source_id"]] += 1
             dropped.remove((item, pick, reason))
     return taken, dropped
 
@@ -259,6 +268,8 @@ class Pipeline:
                 seen.add(p.index)
                 p.score = max(1, min(10, p.score))
                 picks.append(p)
+        if items and n > 0 and not picks:
+            raise LLMError("no_valid_picks")
         return picks[:n]
 
     @staticmethod
@@ -269,6 +280,7 @@ class Pipeline:
         sel, items = self.cfg["select"], s["collected"]
         batch, keep_n, border_n = sel["batch_size"], sel["prelim_picks"], sel["prelim_borderline"]
         survivors = []
+        fallbacks = []
         for b, start in enumerate(range(0, len(items), batch)):               # 예선: 묶음마다 상위 keep_n 건
             chunk = items[start:start + batch]
             fallback = None
@@ -276,6 +288,8 @@ class Pipeline:
                 picks = self._rank(chunk, keep_n + border_n, "select_prelim")
             except LLMError as exc:                                          # 모델이 실패한 묶음은 최신순으로 대체
                 picks, fallback = [], str(exc)[:120]
+                fallbacks.append({"stage": "select_prelim", "batch": b,
+                                  "reason": "no_valid_picks" if str(exc) == "no_valid_picks" else "llm_error"})
             kept, border = picks[:keep_n], picks[keep_n:]
             if fallback:
                 for rank, it in enumerate(self._by_recency(chunk)[:keep_n], 1):
@@ -298,6 +312,8 @@ class Pipeline:
                 final_fallback = None
             except LLMError as exc:
                 final_fallback = str(exc)[:120]
+                fallbacks.append({"stage": "select_final", "reason":
+                                  "no_valid_picks" if str(exc) == "no_valid_picks" else "llm_error"})
                 ranked = [(it, Pick(index=0, score=0, reason="LLM 실패 — 최신순 대체", event=""))
                           for it in self._by_recency(survivors)[:ask]]
             taken, dropped = enforce_rules(ranked, target=sel["final_target"], min_final=sel["final_min"],
@@ -316,6 +332,8 @@ class Pipeline:
         else:
             self.metrics.emit("select_final", survivors=0, picked=0, pick_ratio=None, detail=[], picks=[], fallback=None)
         return {"shortlisted": survivors, "picked": picked,
+                "selection_status": "empty_input" if not items else "fallback" if fallbacks else "model",
+                "selection_fallbacks": fallbacks,
                 "log": [f"② 선별   {len(items)} → 예선 {len(survivors)} → {len(picked)}건"
                         + (f" · 규칙으로 제외 {len(dropped)}건" if dropped else "")]}
 
@@ -345,7 +363,19 @@ class Pipeline:
             return inline[:cc["body_max_chars"]], "inline", {}
         got = fetch_body(self.http, self.robots, item["url"], cc["body_max_chars"],
                          excluded_hosts=cc.get("excluded_hosts", []))
-        return got["text"], "page", {"http_status": got["status"], "robots": got["robots"]}
+        error = got.get("error")
+        if not error and got["robots"] not in ("allowed", "no_robots"):
+            error = "robots_" + got["robots"]
+        elif not error and got["status"] is not None and got["status"] != 200:
+            error = f"http_{got['status']}"
+        return got["text"], "page", {"http_status": got["status"], "robots": got["robots"], "body_error": error}
+
+    @staticmethod
+    def _failed_report(item: dict, attempt: int, reason: str, log: str) -> dict:
+        # 초안 없는 취재 실패도 최종 거절 원인을 보존한다. 모델 검수나 재생성 대상으로 만들지 않는다.
+        return {"verdicts": [{"article_id": item["id"], "attempt": attempt, "ok": False,
+                              "rule_problems": [], "number_flags": [], "judge_ok": None,
+                              "problems": [], "error": reason, "retryable": False}], "log": [log]}
 
     def report(self, s: ReportIn) -> dict:
         item, attempt, feedback = s["item"], s.get("attempt", 0), s.get("feedback")
@@ -353,7 +383,9 @@ class Pipeline:
         if len(body) < self.cfg["collect"]["min_body_chars"]:
             self.metrics.emit("report", article_id=item["id"], attempt=attempt, status="skipped_short_body",
                               body_chars=len(body), body_source=source, **meta)
-            return {"log": [f"   취재 제외 [{item['source']}] 본문 {len(body)}자"]}
+            reason = meta.get("body_error") or "short_body"
+            return self._failed_report(item, attempt, reason,
+                                       f"   취재 제외 [{item['source']}] {reason} · 본문 {len(body)}자")
         user = f"제목: {item['title']}\n출처: {item['source']}\n\n<article>\n{body}\n</article>"
         if feedback:
             user += f"\n\n이전 초안이 검수를 통과하지 못했습니다. 아래 문제를 고쳐 다시 쓰세요.\n{feedback}"
@@ -362,7 +394,8 @@ class Pipeline:
         except LLMError as exc:
             self.metrics.emit("report", article_id=item["id"], attempt=attempt, status="llm_error",
                               body_chars=len(body), error=str(exc)[:160])
-            return {"log": [f"   요약 실패 [{item['source']}] {str(exc)[:60]}"]}
+            return self._failed_report(item, attempt, str(exc)[:160],
+                                       f"   요약 실패 [{item['source']}] {str(exc)[:60]}")
         self.metrics.emit("report", article_id=item["id"], attempt=attempt, status="drafted", body_chars=len(body),
                           body_source=source, headline=draft.headline.strip(), **meta)
         return {"drafted": [{"article_id": item["id"], "attempt": attempt, "headline": draft.headline.strip(),
@@ -524,6 +557,7 @@ def run_pipeline(settings: dict, *, publish: bool, hours: int | None = None) -> 
                  importance_sha1=hashlib.sha1(settings["audience"]["importance"].encode()).hexdigest()[:10],
                  sources=[s["id"] for s in cfg["collect"]["sources"]])
     llm = http = None
+    cleanup_errors = []
     try:
         http = Http(cfg["collect"]["user_agent"], cfg["collect"]["request_timeout_s"])
         llm = LLM(cfg["llm"], metrics)
@@ -534,12 +568,29 @@ def run_pipeline(settings: dict, *, publish: bool, hours: int | None = None) -> 
         metrics.emit("run_end", status="error", error=f"{type(exc).__name__}: {str(exc)[:200]}",
                      duration_s=round(time.perf_counter() - started, 1))
         raise
+    finally:
+        for name, resource in (("llm", llm), ("http", http)):
+            close = getattr(resource, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception as exc:
+                    cleanup_errors.append({"resource": name, "error": type(exc).__name__})
+    if cleanup_errors:
+        final["cleanup_errors"] = cleanup_errors
+    try:
+        _write_local_cache(store, run_id, final)
+        final["cache_status"] = {"status": "saved"}
+    except (OSError, ValueError, TypeError):
+        # 발송 이후의 선택적 평가 캐시 실패를 전송 실패로 바꾸면 재실행·중복 게시를 유도할 수 있다.
+        final["cache_status"] = {"status": "failed", "error": "cache_write_failed"}
     metrics.emit("run_end", status="ok", duration_s=round(time.perf_counter() - started, 1), llm_calls=llm.calls,
                  http_requests=http.count, publish_status=final["published"]["status"],
+                 cache_status=final["cache_status"]["status"],
+                 cleanup_errors=cleanup_errors,
                  counts={"collected": len(final["collected"]), "shortlisted": len(final["shortlisted"]),
                          "picked": len(final["picked"]), "verified": len(final["verified"]),
                          "rejected": len(final["rejected"])})
-    _write_local_cache(store, run_id, final)
     final["run_id"] = run_id
     return final
 

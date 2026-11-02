@@ -60,6 +60,7 @@ def evaluate_run(items: list[dict], labels: dict, survivors: list[dict], picked:
 
 
 def summarize(runs: list[dict]) -> dict:
+    """전달된 반복만 집계하는 순수 도우미. production의 상태 분리는 main에서 한다."""
     keys = ("precision", "max_precision", "random_baseline", "mean_label_picked", "mean_label_pool",
             "irrelevant_picked", "survivor_recall")
     out = {k: _mean(r[k] for r in runs) for k in keys}
@@ -71,14 +72,18 @@ def summarize(runs: list[dict]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description="선별 노드 평가 (실제 모델 호출)")
     parser.add_argument("--repeats", type=int, default=3)
+    parser.add_argument("--candidates", type=Path, default=CANDIDATES)
+    parser.add_argument("--labels", type=Path, default=LABELS)
     args = parser.parse_args()
-    if not (CANDIDATES.exists() and LABELS.exists()):
+    if args.repeats <= 0:
+        parser.error("--repeats는 양의 정수여야 합니다")
+    if not (args.candidates.exists() and args.labels.exists()):
         print("eval/candidates.json 과 eval/labels.json 이 필요합니다.", file=sys.stderr)
         return 1
     from tools.label_receiver import validate, unique_object
     try:
-        cand = json.loads(CANDIDATES.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
-        label_doc = json.loads(LABELS.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+        cand = json.loads(args.candidates.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
+        label_doc = json.loads(args.labels.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
     except (ValueError, OSError):
         print("표본 또는 라벨 JSON 형식이 잘못되었습니다", file=sys.stderr)
         return 1
@@ -88,6 +93,13 @@ def main() -> int:
         return 1
     items = cand["items"]
     items = [i for i in items if i["id"] in labels]
+    try:
+        snapshot_now = datetime.fromisoformat(cand["snapshot_at_kst"])
+        if snapshot_now.utcoffset() is None:
+            raise ValueError("timezone required")
+    except (ValueError, TypeError):
+        print("표본 시각 형식이 잘못되었습니다", file=sys.stderr)
+        return 1
 
     from config import load_settings
     from graph import Pipeline
@@ -102,26 +114,37 @@ def main() -> int:
                  importance=settings["audience"]["importance"].strip(),
                  audience_status=settings["audience"].get("status"), models=settings["cfg"]["llm"]["models"])
     llm = LLM(settings["cfg"]["llm"], metrics)
-    pipe = Pipeline(settings, llm=llm, http=None, robots=None, metrics=metrics, publisher=None)
+    pipe = Pipeline(settings, llm=llm, http=None, robots=None, metrics=metrics, publisher=None,
+                    now_fn=lambda: snapshot_now)
 
     runs = []
     for k in range(args.repeats):
         shuffled = items[:]
         random.Random(f"eval-{k}").shuffle(shuffled)              # 순서만 바꿔 위치 편향을 본다
         state = pipe.select({"collected": shuffled, "run_id": f"{run_id}-{k}"})
+        status = state.get("selection_status")
+        if status not in {"model", "fallback", "empty_input"} or not isinstance(state.get("selection_fallbacks"), list):
+            print("선별 상태 메타데이터가 잘못되었습니다", file=sys.stderr)
+            return 1
         result = evaluate_run(items, labels, state["shortlisted"], state["picked"])
+        result.update(selection_status=status, selection_fallbacks=state["selection_fallbacks"])
         runs.append(result)
         print(f"반복 {k + 1}: 정밀도 {result['precision']} (상한 {result['max_precision']}, 무작위 {result['random_baseline']})"
               f" · 무관 {result['irrelevant_picked']}건 · 예선 재현율 {result['survivor_recall']}")
-    summary = summarize(runs)
+    summary = summarize([r for r in runs if r["selection_status"] == "model"])
+    fallback_summary = summarize([r for r in runs if r["selection_status"] == "fallback"])
+    status_counts = {s: sum(r["selection_status"] == s for r in runs) for s in ("model", "fallback", "empty_input")}
     payload = {"snapshot": cand["snapshot_at_kst"], "evaluated_at_kst": datetime.now(KST).isoformat(timespec="seconds"),
                "run_id": run_id, "items": len(items), "label_counts": {LABEL_NAME[v]: sum(1 for x in labels.values() if x == v) for v in (2, 1, 0)},
                "importance": settings["audience"]["importance"].strip(), "audience_status": settings["audience"].get("status"),
-               "llm_calls": llm.calls, "summary": summary, "runs": runs,
+               "llm_calls": llm.calls, "summary": summary, "fallback_summary": fallback_summary,
+               "selection_status_counts": status_counts, "clock_source": "snapshot_at_kst", "runs": runs,
                "caveat": "표본 30건의 동작 확인이며 통계적 입증이 아니다. 같은 표본에서 기준을 고쳤다면 그 표본에 맞춰진 결과다."}
     with out.open("x", encoding="utf-8") as stream:
         json.dump(payload, stream, ensure_ascii=False, indent=2)
-    metrics.emit("eval_selection", **{"summary": summary, "label_counts": payload["label_counts"], "llm_calls": llm.calls})
+    metrics.emit("eval_selection", summary=summary, fallback_summary=fallback_summary,
+                 selection_status_counts=status_counts, clock_source="snapshot_at_kst",
+                 label_counts=payload["label_counts"], llm_calls=llm.calls)
     print("\n요약:", summary, f"\n모델 호출 {llm.calls}회 · 저장: {out.relative_to(ROOT)}")
     return 0
 
